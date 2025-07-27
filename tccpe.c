@@ -848,7 +848,7 @@ static void pe_build_imports(struct pe_info *pe)
 
         dllindex = p->dll_index;
         if (dllindex)
-            name = (dllref = pe->s1->loaded_dlls[dllindex-1])->name;
+            name = tcc_basename((dllref = pe->s1->loaded_dlls[dllindex-1])->name);
         else
             name = "", dllref = NULL;
 
@@ -1254,7 +1254,7 @@ static int pe_check_symbols(struct pe_info *pe)
         if (sym->st_shndx == SHN_UNDEF) {
             const char *name = (char*)symtab_section->link->data + sym->st_name;
             unsigned type = ELFW(ST_TYPE)(sym->st_info);
-            int imp_sym;
+            int imp_sym = 0;
             struct import_symbol *is;
 
             int _imp_, n;
@@ -1262,6 +1262,8 @@ static int pe_check_symbols(struct pe_info *pe)
             const char *s, *p;
 
             n = _imp_ = 0;
+            if (sym->st_other & ST_PE_IMPORT)
+                _imp_ = 1;
             do {
                 s = pe_export_name(s1, sym);
                 if (n) {
@@ -1293,7 +1295,7 @@ static int pe_check_symbols(struct pe_info *pe)
 
             if (type == STT_FUNC
                 /* symbols from assembler often have no type */
-                || type == STT_NOTYPE) {
+                || (type == STT_NOTYPE && 0 == _imp_)) {
                 unsigned offset = is->thk_offset;
                 if (offset) {
                     /* got aliased symbol, like stricmp and _stricmp */
@@ -1336,7 +1338,7 @@ static int pe_check_symbols(struct pe_info *pe)
                 sym->st_other &= ~ST_PE_EXPORT; /* do not export */
 
             } else { /* STT_OBJECT */
-                if (0 == _imp_ && 0 == (sym->st_other & ST_PE_IMPORT))
+                if (0 == _imp_)
                     ret = tcc_error_noabort("symbol '%s' is missing __declspec(dllimport)", name);
                 /* original symbol will be patched later in pe_build_imports */
                 sym->st_value = is->iat_index; /* chain potential alias */
@@ -1734,7 +1736,7 @@ quit:
 static int pe_load_dll(TCCState *s1, int fd, const char *filename)
 {
     char *p, *q;
-    DLLReference *ref = tcc_add_dllref(s1, tcc_basename(filename), 0);
+    DLLReference *ref = tcc_add_dllref(s1, filename, 0);
     if (ref->found)
         return 0;
     if (get_dllexports(fd, &p))
@@ -1926,6 +1928,34 @@ static void pe_add_runtime(TCCState *s1, struct pe_info *pe)
     pe->type = pe_type;
 }
 
+ST_FUNC int pe_setsubsy(TCCState *s1, const char *arg)
+{
+    static const struct subsy { const char* p; int v; } x[] = {
+#if defined(TCC_TARGET_I386) || defined(TCC_TARGET_X86_64)
+        { "native", 1 },
+        { "gui", 2 },
+        { "windows", 2 },
+        { "console", 3 },
+        { "posix", 7 },
+        { "efiapp", 10 },
+        { "efiboot", 11 },
+        { "efiruntime", 12 },
+        { "efirom", 13 },
+#elif defined(TCC_TARGET_ARM)
+        { "wince", 9 },
+#endif
+        { 0, -1 }};
+    const struct subsy *y;
+    for (y = x;; ++y) {
+        if (!y->p)
+            return -1;
+        if (0 == strcmp(y->p, arg)) {
+            s1->pe_subsystem = y->v;
+            return 0;
+        }
+    }
+}
+
 static void pe_set_options(TCCState * s1, struct pe_info *pe)
 {
     if (PE_DLL == pe->type) {
@@ -2015,7 +2045,7 @@ ST_FUNC int pe_output_file(TCCState *s1, const char *filename)
     }
     pe_free_imports(&pe);
 #if PE_PRINT_SECTIONS
-    if (s1->g_debug & 8)
+    if (g_debug & 8)
         pe_print_sections(s1, "tcc.log");
 #endif
     return s1->nb_errors ? -1 : 0;

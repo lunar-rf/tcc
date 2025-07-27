@@ -1023,6 +1023,11 @@ ST_FUNC void tcc_debug_start(TCCState *s1)
                 SHN_ABS, filename);
 
     if (s1->do_debug) {
+        /* put a "mapping symbol" '$a' for llvm-objdump etc. tools needed
+           to make them disassemble again when crt1.o had a '$d' before */
+        put_elf_sym(symtab_section, text_section->data_offset, 0,
+            ELFW(ST_INFO)(STB_LOCAL, STT_NOTYPE), 0,
+            text_section->sh_num, "$a");
 
         new_file = last_line_num = 0;
         debug_next_type = N_DEFAULT_DEBUG;

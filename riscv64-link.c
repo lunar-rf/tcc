@@ -347,7 +347,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         *ptr = (*ptr & ~0xff) | (val & 0xff);
         return;
     case R_RISCV_SET16:
-        *ptr = (*ptr & ~0xffff) | (val & 0xffff);
+        write16le(ptr, (read16le(ptr) & ~0xffff) | (val & 0xffff));
         return;
     case R_RISCV_SUB6:
         *ptr = (*ptr & ~0x3f) | ((*ptr - val) & 0x3f);

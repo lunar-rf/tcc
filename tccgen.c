@@ -1374,6 +1374,7 @@ ST_FUNC void save_reg_upstack(int r, int n)
                 l = get_temp_local_var(size, align, &r2);
                 sv.r = VT_LOCAL | VT_LVAL;
                 sv.c.i = l;
+		sv.sym = NULL;
                 store(p->r & VT_VALMASK, &sv);
 #if defined(TCC_TARGET_I386) || defined(TCC_TARGET_X86_64)
                 /* x86 specific: need to pop fp register ST0 if saved */
@@ -2401,10 +2402,15 @@ static void gen_opic(int op)
                             (l2 == -1 || (l2 == 0xFFFFFFFF && t2 != VT_LLONG))))) {
             /* filter out NOP operations like x*1, x-0, x&-1... */
             vtop--;
-        } else if (c2 && (op == '*' || op == TOK_PDIV || op == TOK_UDIV)) {
+        } else if (c2 && (op == '*' || op == TOK_PDIV || op == TOK_UDIV || op == TOK_UMOD)) {
             /* try to use shifts instead of muls or divs */
             if (l2 > 0 && (l2 & (l2 - 1)) == 0) {
                 int n = -1;
+                if (op == TOK_UMOD) {
+                    vtop->c.i = l2 - 1;
+                    op = '&';
+                    goto general_case;
+                }
                 while (l2) {
                     l2 >>= 1;
                     n++;
@@ -3763,6 +3769,7 @@ ST_FUNC void vstore(void)
                 sv.type.t = VT_PTRDIFF_T;
                 sv.r = VT_LOCAL | VT_LVAL;
                 sv.c.i = vtop[-1].c.i;
+		sv.sym = NULL;
                 load(r, &sv);
                 vtop[-1].r = r | VT_LVAL;
             }
@@ -4696,13 +4703,6 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label)
             }
             next();
             break;
-#ifdef TCC_TARGET_ARM64
-        case TOK_UINT128:
-            /* GCC's __uint128_t appears in some Linux header files. Make it a
-               synonym for long double to get the size and alignment right. */
-            u = VT_LDOUBLE;
-            goto basic_type;
-#endif
         case TOK_BOOL:
             u = VT_BOOL;
             goto basic_type;
@@ -6187,6 +6187,7 @@ special_math_val:
             }
 
             next();
+            vcheck_cmp(); /* the generators don't like VT_CMP on vtop */
             gfunc_call(nb_args);
 
             if (ret_nregs < 0) {
@@ -6840,14 +6841,28 @@ static void end_switch(void)
 /* ------------------------------------------------------------------------- */
 /* __attribute__((cleanup(fn))) */
 
+/* protect symbol lvalues from further modification  */
+static void save_lvalues(void)
+{
+    SValue *sv = vtop;
+    while (sv >= vstack) {
+        if (sv->sym && (sv->r & VT_LVAL)) {
+            int align, size = type_size(&sv->type, &align);
+            int r2, l = get_temp_local_var(size, align, &r2);
+            vset(&sv->type, VT_LOCAL | VT_LVAL, l), vtop->r2 = r2;
+            vpushv(sv), *sv = vtop[-1], vstore(), --vtop;
+        }
+        --sv;
+    }
+}
+
 static void try_call_scope_cleanup(Sym *stop)
 {
     Sym *cls = cur_scope->cl.s;
-
     for (; cls != stop; cls = cls->next) {
 	Sym *fs = cls->cleanup_func;
 	Sym *vs = cls->prev_tok;
-
+	save_lvalues();
 	vpushsym(&fs->type, fs);
 	vset(&vs->type, vs->r, vs->c);
 	vtop->sym = vs;
@@ -8221,7 +8236,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		sec = rodata_section;
             } else if (has_init) {
 		sec = data_section;
-                /*if (tcc_state->g_debug & 4)
+                /*if (g_debug & 4)
                     tcc_warning("rw data: %s", get_tok_str(v, 0));*/
             } else if (tcc_state->nocommon)
                 sec = bss_section;

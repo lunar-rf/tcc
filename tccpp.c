@@ -157,7 +157,7 @@ typedef struct TinyAlloc {
 } TinyAlloc;
 
 typedef struct tal_header_t {
-    unsigned  size;
+    ALIGNED(PTR_SIZE) unsigned size;
 #ifdef TAL_DEBUG
     int     line_num; /* negative line_num used for double free check */
     char    file_name[TAL_DEBUG_FILE_LEN + 1];
@@ -246,7 +246,7 @@ static void *tal_realloc_impl(TinyAlloc **pal, void *p, unsigned size TAL_DEBUG_
     tal_header_t *header;
     void *ret;
     int is_own;
-    unsigned adj_size = (size + 3) & -4;
+    unsigned adj_size = (size + PTR_SIZE - 1) & -PTR_SIZE;
     TinyAlloc *al = *pal;
 
 tail_call:
@@ -542,11 +542,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv)
     case TOK_CLLONG:
     case TOK_CULLONG:
         /* XXX: not quite exact, but only useful for testing  */
-#ifdef _WIN32
-        sprintf(p, "%u", (unsigned)cv->i);
-#else
         sprintf(p, "%llu", (unsigned long long)cv->i);
-#endif
         break;
     case TOK_LCHAR:
         cstr_ccat(&cstr_buf, 'L');
@@ -1338,8 +1334,10 @@ ST_FUNC void skip_to_eol(int warn)
         return;
     if (warn)
         tcc_warning("extra tokens after directive");
+    while (macro_stack)
+        end_macro();
     file->buf_ptr = parse_line_comment(file->buf_ptr - 1);
-    tok = TOK_LINEFEED;
+    next_nomacro();
 }
 
 static CachedInclude *
@@ -1356,7 +1354,7 @@ static int parse_include(TCCState *s1, int do_next, int test)
         cstr_reset(&tokcstr);
         file->buf_ptr = parse_pp_string(file->buf_ptr, c == '<' ? '>' : c, &tokcstr);
         i = tokcstr.size;
-        pstrncpy(name, tokcstr.data, i >= sizeof name ? sizeof name - 1 : i);
+        pstrncpy(name, sizeof name, tokcstr.data, i);
         next_nomacro();
     } else {
         /* computed #include : concatenate tokens until result is one of
@@ -1397,7 +1395,7 @@ static int parse_include(TCCState *s1, int do_next, int test)
             if (c != '\"')
                 continue;
             p = file->true_filename;
-            pstrncpy(buf, p, tcc_basename(p) - p);
+            pstrncpy(buf, sizeof buf, p, tcc_basename(p) - p);
         } else {
             int j = i - 2, k = j - s1->nb_include_paths;
             if (k < 0)
@@ -1491,8 +1489,7 @@ static int expr_preprocess(TCCState *s1)
                 if (tok != ')')
                     expect("')'");
             }
-            tok = TOK_CINT;
-            tokc.i = c;
+            goto c_number;
         } else if (tok == TOK___HAS_INCLUDE ||
                    tok == TOK___HAS_INCLUDE_NEXT) {
             t = tok;
@@ -1502,12 +1499,13 @@ static int expr_preprocess(TCCState *s1)
             c = parse_include(s1, t - TOK___HAS_INCLUDE, 1);
             if (tok != ')')
                 expect("')'");
-            tok = TOK_CINT;
-            tokc.i = c;
+            goto c_number;
         } else {
             /* if undefined macro, replace with zero */
-            tok = TOK_CINT;
-            tokc.i = 0;
+            c = 0;
+        c_number:
+            tok = TOK_CLLONG; /* type intmax_t */
+            tokc.i = c;
         }
         tok_str_add_tok(str);
     }
@@ -1931,38 +1929,37 @@ ST_FUNC void preprocess(int is_bof)
     case TOK_LINE:
         parse_flags &= ~PARSE_FLAG_TOK_NUM;
         next();
-        parse_flags |= PARSE_FLAG_TOK_NUM;
         if (tok != TOK_PPNUM) {
     _line_err:
             tcc_error("wrong #line format");
         }
+        c = 1;
         goto _line_num;
     case TOK_PPNUM:
         if (parse_flags & PARSE_FLAG_ASM_FILE)
             goto ignore;
+        c = 0; /* no error with extra tokens */
     _line_num:
         for (n = 0, q = tokc.str.data; *q; ++q) {
             if (!isnum(*q))
                 goto _line_err;
             n = n * 10 + *q - '0';
         }
-        parse_flags &= ~PARSE_FLAG_TOK_STR;
+        parse_flags &= ~PARSE_FLAG_TOK_STR; /* don't parse escape sequences */
         next();
-        parse_flags |= PARSE_FLAG_TOK_STR;
-        if (tok == TOK_PPSTR && tokc.str.data[0] == '"') {
+        if (tok != TOK_LINEFEED) {
+            if (tok != TOK_PPSTR || tokc.str.data[0] != '"')
+                goto _line_err;
             tokc.str.data[tokc.str.size - 2] = 0;
             tccpp_putfile(tokc.str.data + 1);
-            n--;
-            if (macro_ptr && *macro_ptr == 0)
-                macro_stack->save_line_num = n;
+            next();
+            /* skip optional level number & advance to next line */
+            skip_to_eol(c);
         }
-        else if (tok != TOK_LINEFEED)
-            goto _line_err;
         if (file->fd > 0)
             total_lines += file->line_num - n;
-        file->line_ref += file->line_num - n;
         file->line_num = n;
-        goto ignore; /* skip optional level number */
+        break;
 
     case TOK_ERROR:
     case TOK_WARNING:
@@ -2234,19 +2231,27 @@ static void parse_string(const char *s, int len)
     }
 }
 
-/* we use 64 bit numbers */
+#ifdef TCC_USING_DOUBLE_FOR_LDOUBLE
+/* we use 64 bit (52 needed) numbers */
 #define BN_SIZE 2
+#else
+/* we use 128 bit (64/112 needed) numbers */
+#define BN_SIZE 4
+#endif
 
 /* bn = (bn << shift) | or_val */
-static void bn_lshift(unsigned int *bn, int shift, int or_val)
+static int bn_lshift(unsigned int *bn, int shift, int or_val)
 {
     int i;
     unsigned int v;
+    if (bn[BN_SIZE - 1] >> (32 - shift))
+	return shift;
     for(i=0;i<BN_SIZE;i++) {
         v = bn[i];
         bn[i] = (v << shift) | or_val;
         or_val = v >> (32 - shift);
     }
+    return 0;
 }
 
 static void bn_zero(unsigned int *bn)
@@ -2264,7 +2269,11 @@ static void parse_number(const char *p)
     int b, t, shift, frac_bits, s, exp_val, ch;
     char *q;
     unsigned int bn[BN_SIZE];
+#ifdef TCC_USING_DOUBLE_FOR_LDOUBLE
     double d;
+#else
+    long double d;
+#endif
 
     /* number */
     q = token_buf;
@@ -2315,6 +2324,7 @@ static void parse_number(const char *p)
                it by hand */
             /* hexadecimal or binary floats */
             /* XXX: handle overflows */
+            frac_bits = 0;
             *q = '\0';
             if (b == 16)
                 shift = 4;
@@ -2333,9 +2343,8 @@ static void parse_number(const char *p)
                 } else {
                     t = t - '0';
                 }
-                bn_lshift(bn, shift, t);
+                frac_bits -= bn_lshift(bn, shift, t);
             }
-            frac_bits = 0;
             if (ch == '.') {
                 ch = *p++;
                 while (1) {
@@ -2351,7 +2360,7 @@ static void parse_number(const char *p)
                     }
                     if (t >= b)
                         tcc_error("invalid digit");
-                    bn_lshift(bn, shift, t);
+                    frac_bits -= bn_lshift(bn, shift, t);
                     frac_bits += shift;
                     ch = *p++;
                 }
@@ -2370,15 +2379,25 @@ static void parse_number(const char *p)
             if (ch < '0' || ch > '9')
                 expect("exponent digits");
             while (ch >= '0' && ch <= '9') {
-                exp_val = exp_val * 10 + ch - '0';
+		/* If exp_val is this large ldexp will return HUGE_VAL */
+		if (exp_val < 100000000)
+                    exp_val = exp_val * 10 + ch - '0';
                 ch = *p++;
             }
             exp_val = exp_val * s;
             
             /* now we can generate the number */
             /* XXX: should patch directly float number */
+#ifdef TCC_USING_DOUBLE_FOR_LDOUBLE
             d = (double)bn[1] * 4294967296.0 + (double)bn[0];
             d = ldexp(d, exp_val - frac_bits);
+#else
+            d = (long double)bn[3] * 79228162514264337593543950336.0L +
+	        (long double)bn[2] * 18446744073709551616.0L +
+	        (long double)bn[1] * 4294967296.0L +
+	        (long double)bn[0];
+            d = ldexpl(d, exp_val - frac_bits);
+#endif
             t = toup(ch);
             if (t == 'F') {
                 ch = *p++;
@@ -2391,12 +2410,11 @@ static void parse_number(const char *p)
 #ifdef TCC_USING_DOUBLE_FOR_LDOUBLE
                 tokc.d = d;
 #else
-                /* XXX: not large enough */
-                tokc.ld = (long double)d;
+                tokc.ld = d;
 #endif
             } else {
                 tok = TOK_CDOUBLE;
-                tokc.d = d;
+                tokc.d = (double)d;
             }
         } else {
             /* decimal floats */
@@ -2508,6 +2526,10 @@ static void parse_number(const char *p)
                 break;
             }
         }
+
+        /* in #if/#elif expressions, all numbers have type (u)intmax_t anyway */
+        if (pp_expr)
+            lcount = 2;
 
         /* Determine if it needs 64 bits and/or unsigned in order to fit */
         if (ucount == 0 && b == 10) {
@@ -2932,6 +2954,13 @@ maybe_newline:
         break;
         
         /* simple tokens */
+    case '@': /* only used in assembler */
+#ifdef TCC_TARGET_ARM /* comment on arm asm */
+        if (parse_flags & PARSE_FLAG_ASM_FILE) {
+            p = parse_line_comment(p);
+            goto redo_no_start;
+        }
+#endif
     case '(':
     case ')':
     case '[':
@@ -2943,7 +2972,6 @@ maybe_newline:
     case ':':
     case '?':
     case '~':
-    case '@': /* only used in assembler */
     parse_simple:
         tok = c;
         p++;
@@ -3048,6 +3076,11 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args)
                 cval.str.size = tokcstr.size;
                 cval.str.data = tokcstr.data;
                 tok_str_add2(&str, TOK_PPSTR, &cval);
+#ifdef TCC_TARGET_ARM
+            } else if ((parse_flags & PARSE_FLAG_ASM_FILE) && t == TOK_PPNUM) {
+                /* for example: mov r1,#0 */
+                --macro_str, tok_str_add(&str, '#');
+#endif
             } else {
                 expect("macro parameter after '#'");
             }

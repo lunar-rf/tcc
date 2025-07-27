@@ -2195,9 +2195,6 @@ ST_FUNC int macho_output_file(TCCState *s1, const char *filename)
         tcc_error_noabort("could not write '%s: %s'", filename, strerror(errno));
         return -1;
     }
-    if (s1->verbose)
-        printf("<- %s\n", filename);
-
     tcc_add_runtime(s1);
     tcc_macho_add_destructor(s1);
     resolve_common_syms(s1);
@@ -2222,6 +2219,8 @@ ST_FUNC int macho_output_file(TCCState *s1, const char *filename)
 	bind_rebase_import(s1, &mo);
 #endif
         convert_symbols(s1, &mo);
+        if (s1->verbose)
+            printf("<- %s\n", filename);
         macho_write(s1, &mo, fp);
     }
 
@@ -2291,12 +2290,9 @@ ST_FUNC void tcc_add_macos_sdkpath(TCCState* s)
     cstr_free(&path);
 }
 
-ST_FUNC const char* macho_tbd_soname(const char* filename) {
+ST_FUNC char* macho_tbd_soname(int fd) {
     char *soname, *data, *pos;
-    const char *ret = filename;
-
-    int fd = open(filename,O_RDONLY);
-    if (fd<0) return ret;
+    char *ret = 0;
     pos = data = tcc_load_text(fd);
     if (!tbd_parse_movepast("install-name: ")) goto the_end;
     tbd_parse_skipws;

@@ -125,6 +125,7 @@
     #define __FINITE_MATH_ONLY__ 1
     #define _FORTIFY_SOURCE 0
     //#define __has_builtin(x) 0
+    #define _Float16 short unsigned int /* fake type just for size & alignment (macOS Sequoia) */
 
 #elif defined __ANDROID__
     #define  BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD
@@ -140,6 +141,12 @@
     #define __INTPTR_TYPE__ __PTRDIFF_TYPE__
 #endif
     #define __INT32_TYPE__ int
+
+#if defined __aarch64__
+    /* GCC's __uint128_t appears in some Linux/OSX header files. Make it a
+       synonym for long double to get the size and alignment right. */
+    #define __uint128_t long double
+#endif
 
 #if !defined _WIN32
     /* glibc defines. We do not support __USER_NAME_PREFIX__ */

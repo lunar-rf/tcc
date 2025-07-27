@@ -6,7 +6,7 @@ on:
 
 jobs:
   test-x86_64-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     timeout-minutes: 2
     steps:
     - uses: actions/checkout@v4
@@ -29,76 +29,88 @@ jobs:
     - name: make & test tcc (aarch64-osx)
       run: ./configure && make && make test -k
 
-  test-x86-win32:
-    runs-on: windows-2019
-    timeout-minutes: 6
+  test-x86_64-win32:
+    runs-on: windows-2025
+    timeout-minutes: 4
     steps:
     - uses: actions/checkout@v4
     - name: make & test tcc (x86_64-win32)
       shell: cmd
       run: |
+        echo ::group:: setup msys mingw64-gcc
         set MSYS2_PATH_TYPE=inherit
         set MSYSTEM=MINGW64
         set CHERE_INVOKING=yes
+        C:\msys64\usr\bin\bash -l -c "pacman -S --noconfirm mingw-w64-x86_64-gcc"
+        echo ::endgroup::
         C:\msys64\usr\bin\bash -l -c "./configure && make && make test -k"
+
+  test-i386-win32:
+    runs-on: windows-2025
+    timeout-minutes: 4
+    steps:
+    - uses: actions/checkout@v4
     - name: make & test tcc (i386-win32)
       shell: cmd
       run: |
+        echo ::group:: setup msys mingw32-gcc
         set MSYS2_PATH_TYPE=inherit
         set MSYSTEM=MINGW32
         set CHERE_INVOKING=yes
-        C:\msys64\usr\bin\bash -l -c "./configure && make clean all && make test -k"
+        C:\msys64\usr\bin\bash -l -c "pacman -S --noconfirm mingw-w64-i686-gcc"
+        echo ::endgroup::
+        C:\msys64\usr\bin\bash -l -c "./configure && make all && make test -k"
 
   test-armv7-linux:
-    runs-on: ubuntu-20.04
-    timeout-minutes: 6
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
     steps:
     - uses: actions/checkout@v4
-    - uses: uraimo/run-on-arch-action@v2
+    - uses: uraimo/run-on-arch-action@v3
       name: make & test tcc (armv7-linux)
       with:
         arch: armv7
-        distro: ubuntu20.04
+        distro: ubuntu22.04
         githubToken: ${{ github.token }}
         install: |
           apt-get update -q -y
           apt-get install -q -y gcc make
         run: |
-            echo "::endgroup::" && echo "::endgroup::" # missing in 'run-on-arch-action'
+            echo "::endgroup::" # flatten 'run container'
             ./configure && make && make test -k
 
   test-aarch64-linux:
-    runs-on: ubuntu-20.04
-    timeout-minutes: 6
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
     steps:
     - uses: actions/checkout@v4
-    - uses: uraimo/run-on-arch-action@v2
+    - uses: uraimo/run-on-arch-action@v3
       name: make & test tcc (aarch64-linux)
       with:
         arch: aarch64
-        distro: ubuntu20.04
+        distro: ubuntu24.04
         githubToken: ${{ github.token }}
         install: |
           apt-get update -q -y
           apt-get install -q -y gcc make
         run: |
-            echo "::endgroup::" && echo "::endgroup::" # missing in 'run-on-arch-action'
+            echo "::endgroup::" # flatten 'run container'
             ./configure && make && make test -k
 
   test-riscv64-linux:
-    runs-on: ubuntu-20.04
-    timeout-minutes: 6
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
     steps:
     - uses: actions/checkout@v4
-    - uses: uraimo/run-on-arch-action@v2
+    - uses: uraimo/run-on-arch-action@v3
       name: make & test tcc (riscv64-linux)
       with:
         arch: riscv64
-        distro: ubuntu20.04
+        distro: ubuntu22.04
         githubToken: ${{ github.token }}
         install: |
           apt-get update -q -y
           apt-get install -q -y gcc make
         run: |
-            echo "::endgroup::" && echo "::endgroup::" # missing in 'run-on-arch-action'
+            echo "::endgroup::" # flatten 'run container'
             ./configure && make && make test -k

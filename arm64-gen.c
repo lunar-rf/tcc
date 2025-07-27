@@ -997,6 +997,8 @@ ST_FUNC void gfunc_call(int nb_args)
     int variadic = (vtop[-nb_args].type.ref->f.func_type == FUNC_ELLIPSIS);
     int var_nb_arg = n_func_args(&vtop[-nb_args].type);
 
+    save_regs(nb_args + 1);
+
 #ifdef CONFIG_TCC_BCHECK
     if (tcc_state->do_bounds_check)
         gbound_args(nb_args);
@@ -1028,10 +1030,6 @@ ST_FUNC void gfunc_call(int nb_args)
         }
 
     stack = (stack + 15) >> 4 << 4;
-
-    /* fetch cpu flag before generating any code */
-    if ((vtop->r & VT_VALMASK) == VT_CMP)
-      gv(RC_INT);
 
     if (stack >= 0x1000000) // 16Mb
         tcc_error("stack size too big %lu", stack);
@@ -1130,7 +1128,6 @@ ST_FUNC void gfunc_call(int nb_args)
             vswap();
     }
 
-    save_regs(0);
     arm64_gen_bl_or_b(0);
     --vtop;
     if (stack & 0xfff)

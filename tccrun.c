@@ -221,7 +221,7 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
 
     tcc_add_symbol(s1, "__rt_exit", rt_exit);
     if (s1->nostdlib) {
-        s1->run_main = top_sym = "_start";
+        s1->run_main = top_sym = s1->elf_entryname ? s1->elf_entryname : "_start";
     } else {
         tcc_add_support(s1, "runmain.o");
         s1->run_main = "_runmain";
@@ -421,7 +421,7 @@ redo:
     }
 
     /* relocate symbols */
-    relocate_syms(s1, s1->symtab, !(s1->nostdlib));
+    relocate_syms(s1, s1->symtab, 1);
     /* relocate sections */
 #ifdef TCC_TARGET_PE
     s1->pe_imagebase = mem;
@@ -495,7 +495,9 @@ static void bt_link(TCCState *s1)
 {
 #ifdef CONFIG_TCC_BACKTRACE
     rt_context *rc;
+#ifdef CONFIG_TCC_BCHECK
     void *p;
+#endif
 
     if (!s1->do_backtrace)
         return;

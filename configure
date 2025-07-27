@@ -381,7 +381,7 @@ case $targetos in
       default sysroot "/usr"
     fi
     default prefix "${sysroot}"
-    confvars_set Android new_dtags rpath=no
+    confvars_set Android new_dtags rpath=no dwarf=4
     test "${cpu}" != "i386" && confvars_set pie
     default_conf "static=no"
     case "$cpu" in
@@ -508,6 +508,11 @@ if test "$cpu" = "arm"; then
       confvars_set arm_eabi arm_vfp
     elif grep -s -q "^Features.* \(vfp\|iwmmxt\) " /proc/cpuinfo ; then
       confvars_set arm_vfp
+    fi
+  fi
+  if test -z "$build_cross"; then
+    if grep -s -q "^Features.* \(idiv\)" /proc/cpuinfo ; then
+      confvars_set arm_idiv
     fi
   fi
 fi
@@ -648,6 +653,7 @@ for v in $cpu $confvars ; do
                             print_num TCC_ARM_HARDFLOAT 1 ;;
     CONFIG_arm_eabi=yes)    print_num TCC_ARM_EABI 1 ;;
     CONFIG_arm_vfp=yes)     print_num TCC_ARM_VFP 1 ;;
+    CONFIG_arm_idiv=yes)    print_num __ARM_FEATURE_IDIV 1 ;;
     # OS
     CONFIG_WIN32=yes)       print_num TCC_TARGET_PE 1 ;;
     CONFIG_OSX=yes)         print_num TCC_TARGET_MACHO 1 ;;

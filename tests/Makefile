@@ -204,9 +204,9 @@ btest: boundtest.c
 
 tccb:
 	@echo ------------ $@ ------------
-	$(TCC) -b $(TOPSRC)/tcc.c $(TCCFLAGS) -o tccb1.exe
+	$(TCC) -b $(TOPSRC)/tcc.c $(TCCFLAGS) $(LIBS) -o tccb1.exe
 	mv tccb1.exe tccb2.exe
-	./tccb2.exe -b $(TOPSRC)/tcc.c $(TCCFLAGS) -o tccb1.exe
+	./tccb2.exe -b $(TOPSRC)/tcc.c $(TCCFLAGS) $(LIBS) -o tccb1.exe
 	cmp -s tccb1.exe tccb2.exe && echo "Exe Bound-Test OK"
 
 

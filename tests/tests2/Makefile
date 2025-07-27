@@ -31,6 +31,7 @@ ifeq ($(CONFIG_bcheck),no)
  SKIP += 116_bound_setjmp2.test
  SKIP += 117_builtins.test
  SKIP += 126_bound_global.test
+ SKIP += 132_bound_test.test
 endif
 ifeq ($(CONFIG_dll),no)
  SKIP += 113_btdll.test # no shared lib support yet

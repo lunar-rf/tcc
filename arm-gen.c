@@ -541,6 +541,15 @@ static int negcc(int cc)
    Use relative/got addressing to avoid setting DT_TEXTREL */
 static void load_value(SValue *sv, int r)
 {
+#if CONFIG_TCC_CPUVER >= 7
+    if (!(sv->r & VT_SYM)) {
+        unsigned x=sv->c.i;
+        o(0xE3000000|intr(r)<<12|(x&0xFFF)|(x<<4&0xF0000)); /* movw rx,#x(lo) */
+        if (x&0xFFFF0000)
+          o(0xE3400000|intr(r)<<12|(x>>16&0xFFF)|(x>>12&0xF0000)); /* movt rx,#x(hi) */
+        return;
+    }
+#endif
     o(0xE59F0000|(intr(r)<<12)); /* ldr r, [pc] */
     o(0xEA000000); /* b $+4 */
 #ifndef CONFIG_TCC_PIC
@@ -1302,10 +1311,6 @@ again:
   if (++pass < 2)
     goto again;
 
-  /* Manually free remaining registers since next parameters are loaded
-   * manually, without the help of gv(int). */
-  save_regs(nb_args);
-
   if(todo) {
     o(0xE8BD0000|todo); /* pop {todo} */
     for(pplan = plan->clsplans[CORE_STRUCT_CLASS]; pplan; pplan = pplan->prev) {
@@ -1332,7 +1337,7 @@ again:
    parameters and the function address. */
 void gfunc_call(int nb_args)
 {
-  int r, args_size;
+  int args_size;
   int def_float_abi = float_abi;
   int todo;
   struct plan plan;
@@ -1345,6 +1350,8 @@ void gfunc_call(int nb_args)
     gbound_args(nb_args);
 #endif
 
+  save_regs(nb_args + 1);
+
 #ifdef TCC_ARM_EABI
   if (float_abi == ARM_HARD_FLOAT) {
     variadic = (vtop[-nb_args].type.ref->f.func_type == FUNC_ELLIPSIS);
@@ -1352,12 +1359,6 @@ void gfunc_call(int nb_args)
       float_abi = ARM_SOFTFP_FLOAT;
   }
 #endif
-  /* cannot let cpu flags if other instruction are generated. Also avoid leaving
-     VT_JMP anywhere except on the top of the stack because it would complicate
-     the code generator. */
-  r = vtop->r & VT_VALMASK;
-  if (r == VT_CMP || (r & ~1) == VT_JMP)
-    gv(RC_INT);
 
   memset(&plan, 0, sizeof plan);
   if (nb_args)
@@ -1716,9 +1717,6 @@ void gen_opi(int op)
 	  opc|=2; // sub -> rsb
 	}
       }
-      if ((vtop->r & VT_VALMASK) == VT_CMP ||
-          (vtop->r & (VT_VALMASK & ~1)) == VT_JMP)
-        gv(RC_INT);
       vswap();
       c=intr(gv(RC_INT));
       vswap();
@@ -1757,9 +1755,6 @@ done:
       break;
     case 2:
       opc=0xE1A00000|(opc<<5);
-      if ((vtop->r & VT_VALMASK) == VT_CMP ||
-          (vtop->r & (VT_VALMASK & ~1)) == VT_JMP)
-        gv(RC_INT);
       vswap();
       r=intr(gv(RC_INT));
       vswap();

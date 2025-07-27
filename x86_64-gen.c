@@ -396,6 +396,7 @@ void load(int r, SValue *sv)
             v1.type.t = VT_PTR;
             v1.r = VT_LOCAL | VT_LVAL;
             v1.c.i = fc;
+	    v1.sym = NULL;
             fr = r;
             if (!(reg_classes[fr] & (RC_INT|RC_R11)))
                 fr = get_reg(RC_INT);
@@ -809,6 +810,8 @@ void gfunc_call(int nb_args)
         gbound_args(nb_args);
 #endif
 
+    save_regs(nb_args);
+
     args_size = (nb_args < REGN ? REGN : nb_args) * PTR_SIZE;
     arg = nb_args;
 
@@ -828,9 +831,6 @@ void gfunc_call(int nb_args)
             continue; /* arguments smaller than 8 bytes passed in registers or on stack */
 
         if (bt == VT_STRUCT) {
-            /* fetch cpu flag before generating any code */
-            if ((vtop->r & VT_VALMASK) == VT_CMP)
-                gv(RC_INT);
             /* align to stack align size */
             size = (size + 15) & ~15;
             /* generate structure store */
@@ -909,7 +909,7 @@ void gfunc_call(int nb_args)
         }
         vtop--;
     }
-    save_regs(0);
+
     /* Copy R10 and R11 into RCX and RDX, respectively */
     if (nb_args > 0) {
         o(0xd1894c); /* mov %r10, %rcx */
@@ -1252,6 +1252,8 @@ void gfunc_call(int nb_args)
         gbound_args(nb_args);
 #endif
 
+    save_regs(nb_args);
+
     /* calculate the number of integer/float register arguments, remember
        arguments to be passed via stack (in onstack[]), and also remember
        if we have to align the stack pointer to 16 (onstack[i] == 2).  Needs
@@ -1280,10 +1282,6 @@ void gfunc_call(int nb_args)
 
     if (nb_sse_args && tcc_state->nosse)
       tcc_error("SSE disabled but floating point arguments passed");
-
-    /* fetch cpu flag before generating any code */
-    if ((vtop->r & VT_VALMASK) == VT_CMP)
-      gv(RC_INT);
 
     /* for struct arguments, we need to call memcpy and the function
        call breaks register passing arguments we are preparing.
@@ -1371,9 +1369,6 @@ void gfunc_call(int nb_args)
 
     tcc_free(onstack);
 
-    /* XXX This should be superfluous.  */
-    save_regs(0); /* save used temporary registers */
-
     /* then, we prepare register passing arguments.
        Note that we cannot set RDX and RCX in this loop because gv()
        may break these temporary registers. Let's use R10 and R11
@@ -1422,12 +1417,6 @@ void gfunc_call(int nb_args)
     }
     assert(gen_reg == 0);
     assert(sse_reg == 0);
-
-    /* We shouldn't have many operands on the stack anymore, but the
-       call address itself is still there, and it might be in %eax
-       (or edx/ecx) currently, which the below writes would clobber.
-       So evict all remaining operands here.  */
-    save_regs(0);
 
     /* Copy R10 and R11 into RDX and RCX, respectively */
     if (nb_reg_args > 2) {
@@ -1831,13 +1820,6 @@ void gen_opl(int op)
     gen_opi(op);
 }
 
-void vpush_const(int t, int v)
-{
-    CType ctype = { t | VT_CONSTANT, 0 };
-    vpushsym(&ctype, external_global_sym(v, &ctype));
-    vtop->r |= VT_LVAL;
-}
-
 /* generate a floating point operation 'v = t1 op t2' instruction. The
    two operands are guaranteed to have the same floating point type */
 /* XXX: need to use ST1 too */
@@ -1852,14 +1834,10 @@ void gen_opf(int op)
         if (float_type == RC_ST0) {
             o(0xe0d9); /* fchs */
         } else {
-            /* -0.0, in libtcc1.c */
-            vpush_const(bt, bt == VT_FLOAT ? TOK___mzerosf : TOK___mzerodf);
-            gv(RC_FLOAT);
-            if (bt == VT_DOUBLE)
-                o(0x66);
-            /* xorp[sd] %xmm1, %xmm0 */
-            o(0xc0570f | (REG_VALUE(vtop[0].r) + REG_VALUE(vtop[-1].r)*8) << 16);
-            vtop--;
+            save_reg(vtop->r);
+            o(0x80); /* xor $0x80, $n(rbp) */
+            gen_modrm(6, vtop->r, NULL, vtop->c.i + (bt == VT_DOUBLE ? 7 : 3));
+            o(0x80);
         }
         return;
     }

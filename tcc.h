@@ -217,6 +217,8 @@ extern long double strtold (const char *__nptr, char **__endptr);
 
 #if defined TCC_TARGET_PE || defined TCC_TARGET_MACHO
 # define ELF_OBJ_ONLY /* create elf .o but native executables */
+#else
+# define TCC_TARGET_UNIX 1
 #endif
 
 /* No ten-byte long doubles on window and macos except in
@@ -729,6 +731,7 @@ struct TCCState {
     unsigned char verbose; /* if true, display some information during compilation */
     unsigned char nostdinc; /* if true, no standard headers are added */
     unsigned char nostdlib; /* if true, no standard libraries are added */
+    unsigned char nostdlib_paths; /* if true, the default paths are not searched for libraries */
     unsigned char nocommon; /* if true, do not use common symbols for .bss data */
     unsigned char static_link; /* if true, static linking is performed */
     unsigned char rdynamic; /* if true, all symbols are exported */
@@ -802,6 +805,7 @@ struct TCCState {
     char *tcc_lib_path; /* CONFIG_TCCDIR or -B option */
     char *soname; /* as specified on the command line (-soname) */
     char *rpath; /* as specified on the command line (-Wl,-rpath=) */
+    char *elfint; /* -Wl,-I... on command line */
     char *elf_entryname; /* "_start" unless set */
     char *init_symbol; /* symbols to call at load-time (not used currently) */
     char *fini_symbol; /* symbols to call at unload-time (not used currently) */
@@ -917,8 +921,6 @@ struct TCCState {
     /* debug state */
     struct _tccdbg *dState;
 
-    /* Is there a new undefined sym since last new_undef_sym() */
-    int new_undef_sym;
     /* extra attributes (eg. GOT/PLT value) for symtab symbols */
     struct sym_attr *sym_attrs;
     int nb_sym_attrs;
@@ -985,11 +987,8 @@ struct TCCState {
     unsigned int total_bytes;
     unsigned int total_output[4];
 
-    /* option -dnum (for general development purposes) */
-    int g_debug;
-
     /* used by tcc_load_ldscript */
-    int fd, cc;
+    unsigned char *ld_p; /* text pointer */
 
     /* for warnings/errors for object files */
     const char *current_filename;
@@ -1002,7 +1001,9 @@ struct TCCState {
     char *deps_outfile; /* option -MF */
     int argc;
     char **argv;
-    CString linker_arg; /* collect -Wl options */
+    /* -Wl options */
+    char **link_argv;
+    int link_argc, link_optind;
 };
 
 struct filespec {
@@ -1191,11 +1192,12 @@ enum tcc_token {
 ST_DATA struct TCCState *tcc_state;
 ST_DATA void** stk_data;
 ST_DATA int nb_stk_data;
+ST_DATA int g_debug;
 
 /* public functions currently used by the tcc main function */
 ST_FUNC char *pstrcpy(char *buf, size_t buf_size, const char *s);
 ST_FUNC char *pstrcat(char *buf, size_t buf_size, const char *s);
-ST_FUNC char *pstrncpy(char *out, const char *in, size_t num);
+ST_FUNC char *pstrncpy(char *out, size_t buf_size, const char *s, size_t num);
 PUB_FUNC char *tcc_basename(const char *name);
 PUB_FUNC char *tcc_fileextension (const char *name);
 
@@ -1265,7 +1267,7 @@ ST_FUNC int tcc_add_file_internal(TCCState *s1, const char *filename, int flags)
 #define AFF_TYPE_ASM    2
 #define AFF_TYPE_ASMPP  4
 #define AFF_TYPE_LIB    8
-#define AFF_TYPE_MASK   (15 | AFF_TYPE_BIN)
+#define AFF_TYPE_MASK   (7 | AFF_TYPE_BIN)
 /* values from tcc_object_type(...) */
 #define AFF_BINTYPE_REL 1
 #define AFF_BINTYPE_DYN 2
@@ -1274,6 +1276,7 @@ ST_FUNC int tcc_add_file_internal(TCCState *s1, const char *filename, int flags)
 
 /* return value of tcc_add_file_internal(): 0, -1, or FILE_NOT_FOUND */
 #define FILE_NOT_FOUND -2
+#define FILE_NOT_RECOGNIZED -3 /* unrecognized file type */
 
 #ifndef ELF_OBJ_ONLY
 ST_FUNC int tcc_add_crt(TCCState *s, const char *filename);
@@ -1289,7 +1292,7 @@ ST_FUNC void tcc_add_btstub(TCCState *s1);
 ST_FUNC void tcc_add_pragma_libs(TCCState *s1);
 PUB_FUNC int tcc_add_library_err(TCCState *s, const char *f);
 PUB_FUNC void tcc_print_stats(TCCState *s, unsigned total_time);
-PUB_FUNC int tcc_parse_args(TCCState *s, int *argc, char ***argv, int optind);
+PUB_FUNC int tcc_parse_args(TCCState *s, int *argc, char ***argv);
 #ifdef _WIN32
 ST_FUNC char *normalize_slashes(char *path);
 #endif
@@ -1571,7 +1574,7 @@ ST_FUNC void tcc_add_runtime(TCCState *s1);
 
 /* ------------ xxx-link.c ------------ */
 
-#if !defined ELF_OBJ_ONLY || defined TCC_TARGET_MACHO
+#ifndef TCC_TARGET_PE
 ST_FUNC int code_reloc (int reloc_type);
 ST_FUNC int gotplt_entry_type (int reloc_type);
 /* Whether to generate a GOT/PLT entry and when. NO_GOTPLT_ENTRY is first so
@@ -1583,13 +1586,11 @@ enum gotplt_entry {
     ALWAYS_GOTPLT_ENTRY	/* always generate (eg. PLTOFF relocs) */
 };
 #define NEED_RELOC_TYPE
-
 #if !defined TCC_TARGET_MACHO || defined TCC_IS_NATIVE
 ST_FUNC unsigned create_plt_entry(TCCState *s1, unsigned got_offset, struct sym_attr *attr);
 ST_FUNC void relocate_plt(TCCState *s1);
 ST_FUNC void build_got_entries(TCCState *s1, int got_sym); /* in tccelf.c */
 #define NEED_BUILD_GOT
-
 #endif
 #endif
 
@@ -1688,7 +1689,7 @@ dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
         retval |= (byte & 0x7f) << (i * 7);
 	if ((byte & 0x80) == 0) {
 	    if ((byte & 0x40) && (i + 1) * 7 < 64)
-		retval |= -1LL << ((i + 1) * 7);
+		retval |= (uint64_t)-1LL << ((i + 1) * 7);
 	    break;
 	}
     }
@@ -1789,6 +1790,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 ST_FUNC int pe_load_file(struct TCCState *s1, int fd, const char *filename);
 ST_FUNC int pe_output_file(TCCState * s1, const char *filename);
 ST_FUNC int pe_putimport(TCCState *s1, int dllindex, const char *name, addr_t value);
+ST_FUNC int pe_setsubsy(TCCState *s1, const char *arg);
 #if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64
 #endif
 #ifdef TCC_TARGET_X86_64
@@ -1809,7 +1811,7 @@ ST_FUNC int macho_load_dll(TCCState *s1, int fd, const char *filename, int lev);
 ST_FUNC int macho_load_tbd(TCCState *s1, int fd, const char *filename, int lev);
 #ifdef TCC_IS_NATIVE
 ST_FUNC void tcc_add_macos_sdkpath(TCCState* s);
-ST_FUNC const char* macho_tbd_soname(const char* filename);
+ST_FUNC char* macho_tbd_soname(int fd);
 #endif
 #endif
 /* ------------ tccrun.c ----------------- */

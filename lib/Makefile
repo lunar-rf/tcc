@@ -33,6 +33,8 @@ ifeq "$($(T)-libtcc1-usegcc)" "yes"
  BFLAGS = $(if $(CONFIG_dwarf),-gdwarf,-gstabs)
 endif
 
+XFLAGS += -I$(TOP)
+
 I386_O = libtcc1.o alloca.o alloca-bt.o $(COMMON_O)
 X86_64_O = libtcc1.o alloca.o alloca-bt.o $(COMMON_O)
 ARM_O = libtcc1.o armeabi.o alloca.o armflush.o $(COMMON_O)
@@ -91,9 +93,7 @@ $(X)%.o : %.S $(TCC)
 $(TOP)/%.o : %.c $(TCC)
 	$S$(XCC) -c $< -o $@ $(XFLAGS)
 
-$(TOP)/bcheck.o : XFLAGS += $(BFLAGS) -I$(TOP)
-# includes tccrun.c, $(TOP) for config.h  (tccrun.c prerequisite via $(TCC))
-$(TOP)/bt-exe.o : XFLAGS += -I$(TOP)
+$(TOP)/bcheck.o : XFLAGS += $(BFLAGS)
 
 $(X)crt1w.o : crt1.c
 $(X)wincrt1w.o : wincrt1.c

@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <setjmp.h>
+#include <stdatomic.h>
 
 #if !defined(__FreeBSD__) \
  && !defined(__FreeBSD_kernel__) \
@@ -350,7 +351,7 @@ static unsigned char print_heap;
 static unsigned char print_statistic;
 static unsigned char no_strdup;
 static unsigned char use_sem;
-static int never_fatal;
+static _Atomic int never_fatal;
 #if HAVE_TLS_FUNC
 #if defined(_WIN32)
 static int no_checking = 0;
@@ -392,7 +393,7 @@ static __thread int no_checking = 0;
 #define NO_CHECKING_GET()  no_checking
 #define NO_CHECKING_SET(v) no_checking = v 
 #else
-static int no_checking = 0;
+static _Atomic int no_checking = 0;
 #define NO_CHECKING_GET()  no_checking
 #define NO_CHECKING_SET(v) no_checking = v 
 #endif
@@ -483,35 +484,13 @@ static void bound_not_found_warning(const char *file, const char *function,
     dprintf(stderr, "%s%s, %s(): Not found %p\n", exec, file, function, ptr);
 }
 
-static void fetch_and_add(int* variable, int value)
-{
-#if defined __i386__ || defined __x86_64__
-      __asm__ volatile("lock; addl %0, %1"
-        : "+r" (value), "+m" (*variable) // input+output
-        : // No input-only
-        : "memory"
-      );
-#elif defined __arm__
-      extern void fetch_and_add_arm(int* variable, int value);
-      fetch_and_add_arm(variable, value);
-#elif defined __aarch64__
-      extern void fetch_and_add_arm64(int* variable, int value);
-      fetch_and_add_arm64(variable, value);
-#elif defined __riscv
-      extern void fetch_and_add_riscv64(int* variable, int value);
-      fetch_and_add_riscv64(variable, value);
-#else
-      *variable += value;
-#endif
-}
-
 /* enable/disable checking. This can be used in signal handlers. */
 void __bounds_checking (int no_check)
 {
 #if HAVE_TLS_FUNC || HAVE_TLS_VAR
     NO_CHECKING_SET(NO_CHECKING_GET() + no_check);
 #else
-    fetch_and_add (&no_checking, no_check);
+    atomic_fetch_add (&no_checking, no_check);
 #endif
 }
 
@@ -528,7 +507,7 @@ void __bound_checking_unlock(void)
 /* enable/disable checking. This can be used in signal handlers. */
 void __bound_never_fatal (int neverfatal)
 {
-    fetch_and_add (&never_fatal, neverfatal);
+    atomic_fetch_add (&never_fatal, neverfatal);
 }
 
 /* return '(p + offset)' for pointer arithmetic (a pointer can reach
