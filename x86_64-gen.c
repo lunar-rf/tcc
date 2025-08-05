@@ -409,6 +409,7 @@ void load(int r, SValue *sv)
 	    v1.type.t = VT_LLONG;
 	    v1.r = VT_CONST;
 	    v1.c.i = sv->c.i;
+	    v1.sym = NULL;
 	    fr = r;
 	    if (!(reg_classes[fr] & (RC_INT|RC_R11)))
 	        fr = get_reg(RC_INT);
@@ -1502,7 +1503,7 @@ void gfunc_prolog(Sym *func_sym)
 	gen_le32(seen_stack_size);
 	/* movq %r11, -0x10(%rbp) */
 	o(0xf05d894c);
-	/* leaq $-192(%rbp), %r11 */
+	/* leaq $-200(%rbp), %r11 */
 	o(0x9d8d4c);
 	gen_le32(-176 - 24);
 	/* movq %r11, -0x8(%rbp) */
@@ -1938,6 +1939,7 @@ void gen_opf(int op)
                 v1.type.t = VT_PTR;
                 v1.r = VT_LOCAL | VT_LVAL;
                 v1.c.i = fc;
+                v1.sym = NULL;
                 load(r, &v1);
                 fc = 0;
                 vtop->r = r = r | VT_LVAL;
@@ -2006,6 +2008,7 @@ void gen_opf(int op)
                 v1.type.t = VT_PTR;
                 v1.r = VT_LOCAL | VT_LVAL;
                 v1.c.i = fc;
+	        v1.sym = NULL;
                 load(r, &v1);
                 fc = 0;
                 vtop->r = r = r | VT_LVAL;

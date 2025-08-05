@@ -310,6 +310,7 @@
     __MAYBE_REDIR(void, free, (void*))
 #if defined __i386__ || defined __x86_64__
     __BOTH(void*, alloca, (__SIZE_TYPE__))
+    void *alloca(__SIZE_TYPE__);
 #else
     __BUILTIN(void*, alloca, (__SIZE_TYPE__))
 #endif

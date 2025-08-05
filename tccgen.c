@@ -1253,7 +1253,7 @@ static void patch_type(Sym *sym, CType *type)
     } else {
         if ((sym->type.t & VT_ARRAY) && type->ref->c >= 0) {
             /* set array size if it was omitted in extern declaration */
-            sym->type.ref->c = type->ref->c;
+            sym->type.ref = type->ref;
         }
         if ((type->t ^ sym->type.t) & VT_STATIC)
             tcc_warning("storage mismatch for redefinition of '%s'",
@@ -4562,7 +4562,7 @@ do_decl:
                         } else {
                             type1.t = (type1.t & ~VT_STRUCT_MASK)
                                 | VT_BITFIELD
-                                | (bit_size << (VT_STRUCT_SHIFT + 6));
+                                | ((unsigned)bit_size << (VT_STRUCT_SHIFT + 6));
                         }
                     }
                     if (v != 0 || (type1.t & VT_BTYPE) == VT_STRUCT) {

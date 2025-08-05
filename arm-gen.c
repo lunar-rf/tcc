@@ -310,7 +310,7 @@ static uint32_t stuff_const(uint32_t op, uint32_t c)
     if(c<256) /* catch undefined <<32 */
       return op|c;
     for(i=2;i<32;i+=2) {
-      m=(0xff>>i)|(0xff<<(32-i));
+      m=(0xffu>>i)|(0xffu<<(32-i));
       if(!(c&~m))
 	return op|(i<<7)|(c<<i)|(c>>(32-i));
     }
@@ -593,7 +593,7 @@ void load(int r, SValue *sv)
     sign=0;
   else {
     sign=1;
-    fc=-fc;
+    fc=-(unsigned)fc;
   }
 
   v = fr & VT_VALMASK;

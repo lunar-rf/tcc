@@ -201,10 +201,10 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 write32le(ptr, read32le(ptr) & 0xff000000);
                 if (x & 0x800000)
                     x -= 0x1000000;
-                x <<= 2;
+                x = (unsigned) x << 2;
                 blx_avail = (CONFIG_TCC_CPUVER >= 5);
                 is_thumb = val & 1;
-                is_bl = (*(unsigned *) ptr) >> 24 == 0xeb;
+                is_bl = read32le(ptr) >> 24 == 0xeb;
                 is_call = (type == R_ARM_CALL || (type == R_ARM_PC24 && is_bl));
                 x += val - addr;
 #ifdef DEBUG_RELOC
@@ -241,8 +241,8 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                     return;
 
                 /* Get initial offset */
-                hi = (*(uint16_t *)ptr);
-                lo = (*(uint16_t *)(ptr+2));
+                hi = read16le(ptr);
+                lo = read16le(ptr+2);
                 s = (hi >> 10) & 1;
                 j1 = (lo >> 13) & 1;
                 j2 = (lo >> 11) & 1;
@@ -313,11 +313,11 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 j2 = s ^ (i2 ^ 1);
                 imm10 = (x >> 12) & 0x3ff;
                 imm11 = (x >> 1) & 0x7ff;
-                (*(uint16_t *)ptr) = (uint16_t) ((hi & 0xf800) |
-                                     (s << 10) | imm10);
-                (*(uint16_t *)(ptr+2)) = (uint16_t) ((lo & 0xc000) |
-                                (j1 << 13) | blx_bit | (j2 << 11) |
-                                imm11);
+                write16le(ptr, (hi & 0xf800) |
+                               (s << 10) | imm10);
+                write16le(ptr+2, (lo & 0xc000) |
+                                 (j1 << 13) | blx_bit | (j2 << 11) |
+                                 imm11);
             }
             return;
         case R_ARM_MOVT_ABS:
@@ -422,7 +422,7 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
             return;
         case R_ARM_GLOB_DAT:
         case R_ARM_JUMP_SLOT:
-            *(addr_t *)ptr = val;
+            write32le(ptr, val);
             return;
         case R_ARM_NONE:
             /* Nothing to do.  Normally used to indicate a dependency

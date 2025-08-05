@@ -1767,9 +1767,13 @@ struct complexinit2 cix22 = {
 };
 
 typedef int arrtype1[];
+arrtype1 sinit19;
+arrtype1 sinit20;
 arrtype1 sinit19 = {1};
 arrtype1 sinit20 = {2,3};
 typedef int arrtype2[3];
+arrtype2 sinit21;
+arrtype2 sinit22;
 arrtype2 sinit21 = {4};
 arrtype2 sinit22 = {5,6,7};
 

@@ -1129,6 +1129,8 @@ static void relocate_section(TCCState *s1, Section *s, Section *sr)
 
     qrel = (ElfW_Rel *)sr->data;
     for_each_elem(sr, 0, rel, ElfW_Rel) {
+	if (s->data == NULL) /* bss */
+	    continue;
         ptr = s->data + rel->r_offset;
         sym_index = ELFW(R_SYM)(rel->r_info);
         sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
@@ -1595,7 +1597,8 @@ ST_FUNC void tcc_add_btstub(TCCState *s1)
 
     s = data_section;
     /* Align to PTR_SIZE */
-    section_ptr_add(s, -s->data_offset & (PTR_SIZE - 1));
+    if (s->data_offset)
+        section_ptr_add(s, -s->data_offset & (PTR_SIZE - 1));
     o = s->data_offset;
     /* create a struct rt_context (see tccrun.c) */
     if (s1->dwarf) {
@@ -3257,7 +3260,7 @@ invalid:
         sm_table[i].s = s;
         /* concatenate sections */
         size = sh->sh_size;
-        if (sh->sh_type != SHT_NOBITS) {
+        if (sh->sh_type != SHT_NOBITS && size) {
             unsigned char *ptr;
             lseek(fd, file_offset + sh->sh_offset, SEEK_SET);
             ptr = section_ptr_add(s, size);
