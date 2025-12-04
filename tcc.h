@@ -56,7 +56,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # include <io.h> /* open, close etc. */
 # include <direct.h> /* getcwd */
 # include <malloc.h> /* alloca */
-# ifdef __GNUC__
+# ifndef _MSC_VER
 #  include <stdint.h>
 # endif
 # define inline __inline
@@ -96,7 +96,11 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #endif
 
 #ifndef offsetof
+#ifdef __clang__ // clang -fsanitize compains about: NULL+value
+#define offsetof(type, field) __builtin_offsetof(type, field)
+#else
 #define offsetof(type, field) ((size_t) &((type *)0)->field)
+#endif
 #endif
 
 #ifndef countof
@@ -381,7 +385,7 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #elif defined TCC_TARGET_ARM64
 # include "arm64-gen.c"
 # include "arm64-link.c"
-# include "arm-asm.c"
+# include "arm64-asm.c"
 #elif defined TCC_TARGET_C67
 # define TCC_TARGET_COFF
 # include "coff.h"
@@ -548,13 +552,17 @@ typedef struct Sym {
     CType type; /* associated type */
     union {
         struct Sym *next; /* next related symbol (for fields and anoms) */
-        int *e; /* expanded token stream */
+        int *e; /* expanded token stream with preprocessor macros */
         int asm_label; /* associated asm label */
         struct Sym *cleanupstate; /* in defined labels */
         int *vla_array_str; /* vla array code */
     };
     struct Sym *prev; /* prev symbol in stack */
-    struct Sym *prev_tok; /* previous symbol for this token */
+    union {
+        struct Sym *prev_tok; /* previous symbol for this token */
+        struct Sym *cleanup_sym; /* symbol from __attribute__((cleanup())) */
+        struct Sym *cleanup_label; /* label in 'pending_gotos' chain */
+    };
 } Sym;
 
 /* section definition */
@@ -736,6 +744,7 @@ struct TCCState {
     unsigned char static_link; /* if true, static linking is performed */
     unsigned char rdynamic; /* if true, all symbols are exported */
     unsigned char symbolic; /* if true, resolve symbols in the current module first */
+    unsigned char znodelete; /* Set DF_1_NODELETE in dynamic section */
     unsigned char filetype; /* file type for compilation (NONE,C,ASM) */
     unsigned char optimize; /* only to #define __OPTIMIZE__ */
     unsigned char option_pthread; /* -pthread option */
@@ -967,6 +976,7 @@ struct TCCState {
     const char *run_main; /* entry for tcc_run() */
     void *run_ptr; /* runtime_memory */
     unsigned run_size; /* size of runtime_memory  */
+    const char *run_stdin; /* custom stdin file for run_main */
 #ifdef _WIN64
     void *run_function_table; /* unwind data */
 #endif
@@ -1082,9 +1092,14 @@ struct filespec {
 #define VT_TYPE (~(VT_STORAGE|VT_STRUCT_MASK))
 
 /* symbol was created by tccasm.c first */
-#define VT_ASM (VT_VOID | 1 << VT_STRUCT_SHIFT)
-#define VT_ASM_FUNC (VT_ASM | 2 << VT_STRUCT_SHIFT)
-#define IS_ASM_SYM(sym) (((sym)->type.t & (VT_BTYPE | VT_ASM)) == VT_ASM)
+#define VT_ASM (VT_VOID | 4 << VT_STRUCT_SHIFT)
+#define VT_ASM_FUNC (VT_VOID | 5 << VT_STRUCT_SHIFT)
+#define IS_ASM_SYM(sym) (((sym)->type.t & ((VT_BTYPE|VT_STRUCT_MASK) & ~(1<<VT_STRUCT_SHIFT))) == VT_ASM)
+#define IS_ASM_FUNC(t) ((t & (VT_BTYPE|VT_STRUCT_MASK)) == VT_ASM_FUNC)
+
+/* base type is array (from typedef/typeof) */
+#define VT_BT_ARRAY (6 << VT_STRUCT_SHIFT)
+#define IS_BT_ARRAY(t) ((t & VT_STRUCT_MASK) == VT_BT_ARRAY)
 
 /* general: set/get the pseudo-bitfield value for bit-mask M */
 #define BFVAL(M,N) ((unsigned)((M) & ~((M) << 1)) * (N))
@@ -1222,6 +1237,7 @@ PUB_FUNC char *tcc_strdup_debug(const char *str, const char *file, int line);
 #endif
 
 ST_FUNC void libc_free(void *ptr);
+/* defined to be not used */
 #define free(p) use_tcc_free(p)
 #define malloc(s) use_tcc_malloc(s)
 #define realloc(p, s) use_tcc_realloc(p, s)
@@ -1501,6 +1517,7 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty);
 ST_FUNC void gbound_args(int nb_args);
 ST_DATA int func_bound_add_epilog;
 #endif
+ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref);
 
 /* ------------ tccelf.c ------------ */
 
@@ -1650,54 +1667,6 @@ static inline void write64le(unsigned char *p, uint64_t x) {
 static inline void add64le(unsigned char *p, int64_t x) {
     write64le(p, read64le(p) + x);
 }
-#define DWARF_MAX_128	((8 * sizeof (int64_t) + 6) / 7)
-#define	dwarf_read_1(ln,end) \
-	((ln) < (end) ? *(ln)++ : 0)
-#define	dwarf_read_2(ln,end) \
-	((ln) + 1 < (end) ? (ln) += 2, read16le((ln) - 2) : 0)
-#define	dwarf_read_4(ln,end) \
-	((ln) + 3 < (end) ? (ln) += 4, read32le((ln) - 4) : 0)
-#define	dwarf_read_8(ln,end) \
-	((ln) + 7 < (end) ? (ln) += 8, read64le((ln) - 8) : 0)
-static inline uint64_t
-dwarf_read_uleb128(unsigned char **ln, unsigned char *end)
-{
-    unsigned char *cp = *ln;
-    uint64_t retval = 0;
-    int i;
-
-    for (i = 0; i < DWARF_MAX_128; i++) {
-	uint64_t byte = dwarf_read_1(cp, end);
-
-        retval |= (byte & 0x7f) << (i * 7);
-	if ((byte & 0x80) == 0)
-	    break;
-    }
-    *ln = cp;
-    return retval;
-}
-static inline int64_t
-dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
-{
-    unsigned char *cp = *ln;
-    int64_t retval = 0;
-    int i;
-
-    for (i = 0; i < DWARF_MAX_128; i++) {
-	uint64_t byte = dwarf_read_1(cp, end);
-
-        retval |= (byte & 0x7f) << (i * 7);
-	if ((byte & 0x80) == 0) {
-	    if ((byte & 0x40) && (i + 1) * 7 < 64)
-		retval |= (uint64_t)-1LL << ((i + 1) * 7);
-	    break;
-	}
-    }
-    *ln = cp;
-    return retval;
-}
-
-
 /* ------------ i386-gen.c ------------ */
 #if defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64 || defined TCC_TARGET_ARM
 ST_FUNC void g(int c);
@@ -1828,6 +1797,7 @@ ST_FUNC const char *dlerror(void);
 ST_FUNC void *dlsym(void *handle, const char *symbol);
 #endif
 ST_FUNC void tcc_run_free(TCCState *s1);
+ST_FUNC void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var);
 #endif
 
 /* ------------ tcctools.c ----------------- */
@@ -1851,14 +1821,14 @@ ST_FUNC void tcc_debug_eincl(TCCState *s1);
 ST_FUNC void tcc_debug_newfile(TCCState *s1);
 
 ST_FUNC void tcc_debug_line(TCCState *s1);
-ST_FUNC void tcc_add_debug_info(TCCState *s1, int param, Sym *s, Sym *e);
+ST_FUNC void tcc_add_debug_info(TCCState *s1, Sym *s, Sym *e);
 ST_FUNC void tcc_debug_funcstart(TCCState *s1, Sym *sym);
 ST_FUNC void tcc_debug_prolog_epilog(TCCState *s1, int value);
 ST_FUNC void tcc_debug_funcend(TCCState *s1, int size);
 ST_FUNC void tcc_debug_extern_sym(TCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type);
 ST_FUNC void tcc_debug_typedef(TCCState *s1, Sym *sym);
 ST_FUNC void tcc_debug_stabn(TCCState *s1, int type, int value);
-ST_FUNC void tcc_debug_fix_anon(TCCState *s1, CType *t);
+ST_FUNC void tcc_debug_fix_forw(TCCState *s1, CType *t);
 
 #if !(defined ELF_OBJ_ONLY || defined TCC_TARGET_ARM || defined TARGETOS_BSD)
 ST_FUNC void tcc_eh_frame_start(TCCState *s1);
@@ -1886,6 +1856,49 @@ ST_FUNC void tcc_tcov_reset_ind(TCCState *s1);
 #define dwarf_str_section       s1->dwarf_str_section
 #define dwarf_line_str_section  s1->dwarf_line_str_section
 
+#define DWARF_MAX_128	((8 * sizeof (int64_t) + 6) / 7)
+#define	dwarf_read_1(ln,end) \
+	((ln) < (end) ? *(ln)++ : 0)
+#define	dwarf_read_2(ln,end) \
+	((ln) + 1 < (end) ? read16le(((ln)+=2) - 2) : 0)
+#define	dwarf_read_4(ln,end) \
+	((ln) + 3 < (end) ? read32le(((ln)+=4) - 4) : 0)
+#define	dwarf_read_8(ln,end) \
+	((ln) + 7 < (end) ? read64le(((ln)+=8) - 8) : 0)
+static inline uint64_t
+dwarf_read_uleb128(unsigned char **ln, unsigned char *end)
+{
+    unsigned char *cp = *ln;
+    uint64_t retval = 0;
+    int i;
+    for (i = 0; i < DWARF_MAX_128; i++) {
+	uint64_t byte = dwarf_read_1(cp, end);
+        retval |= (byte & 0x7f) << (i * 7);
+	if ((byte & 0x80) == 0)
+	    break;
+    }
+    *ln = cp;
+    return retval;
+}
+static inline int64_t
+dwarf_read_sleb128(unsigned char **ln, unsigned char *end)
+{
+    unsigned char *cp = *ln;
+    int64_t retval = 0;
+    int i;
+    for (i = 0; i < DWARF_MAX_128; i++) {
+	uint64_t byte = dwarf_read_1(cp, end);
+        retval |= (byte & 0x7f) << (i * 7);
+	if ((byte & 0x80) == 0) {
+	    if ((byte & 0x40) && (i + 1) * 7 < 64)
+		retval |= (uint64_t)-1LL << ((i + 1) * 7);
+	    break;
+	}
+    }
+    *ln = cp;
+    return retval;
+}
+
 /* default dwarf version for "-gdwarf" */
 #ifdef TCC_TARGET_MACHO
 # define DEFAULT_DWARF_VERSION 2
@@ -1898,9 +1911,7 @@ ST_FUNC void tcc_tcov_reset_ind(TCCState *s1);
 # define CONFIG_DWARF_VERSION 0
 #endif
 
-#if defined TCC_TARGET_PE
-# define R_DATA_32DW 'Z' /* fake code to avoid DLL relocs */
-#elif defined TCC_TARGET_X86_64
+#if defined TCC_TARGET_X86_64
 # define R_DATA_32DW R_X86_64_32
 #else
 # define R_DATA_32DW R_DATA_32

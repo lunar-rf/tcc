@@ -132,6 +132,10 @@ if %TX%==32 echo>> ..\config.h #ifdef TCC_TARGET_I386
 echo>> ..\config.h #define CONFIG_TCC_CROSSPREFIX "%PX%-"
 echo>> ..\config.h #endif
 
+@rem echo>> ..\config.h #define CONFIG_TCC_PREDEFS 1
+@rem %CC% -DC2STR ..\conftest.c -o c2str.exe
+@rem .\c2str.exe ../include/tccdefs.h ../tccdefs_.h
+
 for %%f in (*tcc.exe *tcc.dll) do @del %%f
 
 @if _%TCC_C%_==__ goto compiler_2parts
@@ -200,8 +204,9 @@ exit /B %ERRORLEVEL%
 .\tcc -B. -m%1 -c ../lib/alloca.S
 .\tcc -B. -m%1 -c ../lib/alloca-bt.S
 .\tcc -B. -m%1 -c ../lib/stdatomic.c
+.\tcc -B. -m%1 -c ../lib/atomic.S
 .\tcc -B. -m%1 -c ../lib/builtin.c
-.\tcc -B. -m%1 -ar lib/%2libtcc1.a libtcc1.o crt1.o crt1w.o wincrt1.o wincrt1w.o dllcrt1.o dllmain.o chkstk.o alloca.o alloca-bt.o stdatomic.o builtin.o
+.\tcc -B. -m%1 -ar lib/%2libtcc1.a libtcc1.o crt1.o crt1w.o wincrt1.o wincrt1w.o dllcrt1.o dllmain.o chkstk.o alloca.o alloca-bt.o stdatomic.o atomic.o builtin.o
 .\tcc -B. -m%1 -c ../lib/bcheck.c -o lib/%2bcheck.o -bt -I..
 .\tcc -B. -m%1 -c ../lib/bt-exe.c -o lib/%2bt-exe.o
 .\tcc -B. -m%1 -c ../lib/bt-log.c -o lib/%2bt-log.o

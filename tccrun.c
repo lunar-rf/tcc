@@ -233,13 +233,46 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
     prog_main = (void*)get_sym_addr(s1, s1->run_main, 1, 1);
     if ((addr_t)-1 == (addr_t)prog_main)
         return -1;
+
+    /* custom stdin for run_main, mainly if stdin is/was an input file.
+     * fileno(stdin) should remain 0, as posix mandates to use the smallest
+     * free fd, which is 0 after the initial fclose in freopen. windows too.
+     * to set stdin to the tty, use /dev/tty (posix) or con (windows).
+     */
+    if (s1->run_stdin && !freopen(s1->run_stdin, "r", stdin)) {
+        tcc_error_noabort("failed to reopen stdin from '%s'", s1->run_stdin);
+        return -1;
+    }
+
     errno = 0; /* clean errno value */
     fflush(stdout);
     fflush(stderr);
 
     ret = tcc_setjmp(s1, main_jb, tcc_get_symbol(s1, top_sym));
-    if (0 == ret)
-        ret = prog_main(argc, argv, envp);
+    if (0 == ret) {
+        if (s1->nostdlib) {
+	    int n = 1;
+	    char **p, **e = envp;
+
+	    /* create sysv memory layout: argc, argv[], NULL, envp[], NULL */
+	    if (envp)
+	        while (*e++)
+		    n++;
+	    p = tcc_malloc((argc + n + 2) * sizeof(char *));
+	    p[0] = (char *) (size_t) argc;
+	    memcpy(p + 1, argv, argc * sizeof(char *));
+	    p[argc + 1] = NULL;
+	    if (envp)
+	        memcpy(p + argc + 2, envp, n * sizeof(char *));
+	    else
+	        p[argc + 2] = NULL;
+	    /* Probably never returns */
+	    tcc_run_start(prog_main, argc + n + 2, p);
+	    tcc_free(p);
+	}
+	else
+            ret = prog_main(argc, argv, envp);
+    }
     else if (RT_EXIT_ZERO == ret)
         ret = 0;
 
@@ -312,6 +345,7 @@ static int tcc_relocate_ex(TCCState *s1, void *ptr, unsigned ptr_diff)
     addr_t mem, addr;
 
     if (NULL == ptr) {
+        s1->nb_errors = 0;
 #ifdef TCC_TARGET_PE
         pe_output_file(s1, NULL);
 #else
@@ -495,10 +529,6 @@ static void bt_link(TCCState *s1)
 {
 #ifdef CONFIG_TCC_BACKTRACE
     rt_context *rc;
-#ifdef CONFIG_TCC_BCHECK
-    void *p;
-#endif
-
     if (!s1->do_backtrace)
         return;
     rc = tcc_get_symbol(s1, "__rt_info");
@@ -511,6 +541,7 @@ static void bt_link(TCCState *s1)
         rc->prog_base &= 0xffffffff00000000ULL;
 #ifdef CONFIG_TCC_BCHECK
     if (s1->do_bounds_check) {
+        void *p;
         if ((p = tcc_get_symbol(s1, "__bound_init")))
             ((void(*)(void*,int))p)(rc->bounds_start, 1);
     }
@@ -599,6 +630,13 @@ static void rt_exit(rt_frame *f, int code)
     s = rt_find_state(f);
     rt_post_sem();
     if (s && s->run_lj) {
+#ifdef CONFIG_TCC_BCHECK
+        if (f->fp) { /* called from signal */
+            void *p = tcc_get_symbol(s, "__bound_exit");
+            if (p)
+                ((void (*)(void))p)();
+        }
+#endif
         if (code == 0)
             code = RT_EXIT_ZERO;
         ((void(*)(void*,int))s->run_lj)(s->run_jb, code);

@@ -556,6 +556,7 @@ ST_FUNC void gfunc_call(int nb_args)
     int i, align, size, areg[2];
     int *info = tcc_malloc((nb_args + 1) * sizeof (int));
     int stack_adj = 0, tempspace = 0, stack_add, ofs, splitofs = 0;
+    int old = (vtop[-nb_args].type.ref->f.func_type == FUNC_OLD);
     SValue *sv;
     Sym *sa;
 
@@ -583,8 +584,8 @@ ST_FUNC void gfunc_call(int nb_args)
             size = align = 8;
             byref = 64 | (tempofs << 7);
         }
-        reg_pass(&sv->type, prc, fieldofs, sa != 0);
-        if (!sa && align == 2*XLEN && size <= 2*XLEN)
+        reg_pass(&sv->type, prc, fieldofs, old || sa != 0);
+        if (!old && !sa && align == 2*XLEN && size <= 2*XLEN)
           areg[0] = (areg[0] + 1) & ~1;
         nregs = prc[0];
         if (size == 0)
@@ -599,7 +600,7 @@ ST_FUNC void gfunc_call(int nb_args)
             if (align < XLEN)
               align = XLEN;
             stack_adj += (size + align - 1) & -align;
-            if (!sa) /* one vararg on stack forces the rest on stack */
+            if (!old && !sa) /* one vararg on stack forces the rest on stack */
               areg[0] = 8, areg[1] = 16;
         } else {
             info[i] = areg[prc[1] - 1]++;
@@ -768,6 +769,20 @@ done:
    tcc_free(info);
 }
 
+void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
+{
+#ifdef __riscv
+    void *sp;
+
+    __asm__("sub sp, sp, %1\n"
+            "\tmv %0, sp"
+            : "=r" (sp)
+            : "r" ((((size_t) cnt + 1) & -2) * sizeof(char *)));
+    memcpy(sp, var, cnt * sizeof(char *));
+    __asm__("jalr %0" : : "r" (prog_main));
+#endif
+}
+
 static int func_sub_sp_offset, num_va_regs, func_va_list_ofs;
 
 ST_FUNC void gfunc_prolog(Sym *func_sym)
@@ -832,9 +847,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
                 }
             }
         }
-        sym_push(sym->v & ~SYM_FIELD, &sym->type,
-                 (byref ? VT_LLOCAL : VT_LOCAL) | VT_LVAL,
-                 param_addr);
+        gfunc_set_param(sym, param_addr, byref);
     }
     func_va_list_ofs = addr;
     num_va_regs = 0;
@@ -898,18 +911,14 @@ ST_FUNC void gfunc_epilog(void)
     loc = (loc - num_va_regs * 8);
     d = v = (-loc + 15) & -16;
 
-    if (v >= (1 << 11)) {
-        d = 16;
-        o(0x37 | (5 << 7) | UPPER(v-16)); //lui t0, upper(v)
-        EI(0x13, 0, 5, 5, SIGN11(v-16)); // addi t0, t0, lo(v)
-        ER(0x33, 0, 2, 2, 5, 0); // add sp, sp, t0
-    }
-    EI(0x03, 3, 1, 2, d - 8 - num_va_regs * 8);  // ld ra, v-8(sp)
-    EI(0x03, 3, 8, 2, d - 16 - num_va_regs * 8); // ld s0, v-16(sp)
-    EI(0x13, 0, 2, 2, d);      // addi sp, sp, v
-    EI(0x67, 0, 0, 1, 0);      // jalr x0, 0(x1), aka ret
+    EI(0x13, 0, 2, 8, num_va_regs * 8); // addi sp, s0, num_va_regs*8
+    EI(0x03, 3, 1, 8, -8); // ld ra, -8(s0)
+    EI(0x03, 3, 8, 8, -16); // ld s0, -16(s0)
+    EI(0x67, 0, 0, 1, 0); // jalr x0, 0(x1), aka ret
+
     large_ofs_ind = ind;
     if (v >= (1 << 11)) {
+        d = 16;
         EI(0x13, 0, 8, 2, d - num_va_regs * 8);      // addi s0, sp, d
         o(0x37 | (5 << 7) | UPPER(v-16)); //lui t0, upper(v)
         EI(0x13, 0, 5, 5, SIGN11(v-16)); // addi t0, t0, lo(v)
@@ -1220,6 +1229,10 @@ ST_FUNC void gen_opf(int op)
         ER(0x53, op, rd, rs1, rs2, dbl | 0x50); // fcmp.[sd] RD, RS1, RS2 (op == eq/lt/le)
         if (invert)
           EI(0x13, 4, rd, rd, 1); // xori RD, 1
+
+        /* generate VT_CMP output */
+        vset_VT_CMP(TOK_NE);
+        vtop->cmp_r = rd | (0 << 8);
         break;
     case TOK_NE:
         invert = 1;

@@ -859,7 +859,7 @@ extern "C" {
   }
 #endif
 
-#ifndef !defined (InterlockedAnd64)
+#ifndef InterlockedAnd64
 #define InterlockedAnd64 InterlockedAnd64_Inline
 
   __CRT_INLINE LONGLONG InterlockedAnd64_Inline (LONGLONG volatile *Destination,LONGLONG Value) {

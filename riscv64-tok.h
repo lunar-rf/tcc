@@ -266,6 +266,19 @@
  DEF_ASM(remw)
  DEF_ASM(remuw)
 
+/* "F"/"D" Extension for Single/Double-Precision Floating Point Arithmetic, V2.2 */
+ /* enough implemented for musl */
+ DEF_ASM_WITH_SUFFIX(fsgnj, s)
+ DEF_ASM_WITH_SUFFIX(fsgnj, d)
+ DEF_ASM_WITH_SUFFIX(fmadd, s)
+ DEF_ASM_WITH_SUFFIX(fmadd, d)
+ DEF_ASM_WITH_SUFFIX(fmax, s)
+ DEF_ASM_WITH_SUFFIX(fmax, d)
+ DEF_ASM_WITH_SUFFIX(fmin, s)
+ DEF_ASM_WITH_SUFFIX(fmin, d)
+ DEF_ASM_WITH_SUFFIX(fsqrt, s)
+ DEF_ASM_WITH_SUFFIX(fsqrt, d)
+
 /* "C" Extension for Compressed Instructions, V2.0 */
  DEF_ASM_WITH_SUFFIX(c, nop)
 /* Loads */

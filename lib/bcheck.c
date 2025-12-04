@@ -588,8 +588,9 @@ void * __bound_ptr_indir ## dsize (void *p, size_t offset)                     \
         if (addr <= tree->size) {                                              \
             if (tree->is_invalid || addr + offset + dsize > tree->size) {      \
                 POST_SEM ();                                                   \
-                bound_warning("%p is outside of the region (0x%lx..0x%lx)",    \
-                              p + offset, (long)tree->start,                   \
+                bound_warning("%p (size %d) is outside of the region "         \
+                              "(0x%lx..0x%lx)",                                \
+                              p + offset, dsize, (long)tree->start,            \
                               (long)(tree->start + tree->size - 1));           \
                 if (never_fatal <= 0)                                          \
                     return INVALID_POINTER; /* return an invalid pointer */    \

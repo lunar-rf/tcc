@@ -417,6 +417,7 @@ ST_FUNC void gfunc_call(int nb_args)
             /* allocate the necessary size on stack */
 #ifdef TCC_TARGET_PE
             if (size >= 4096) {
+                save_reg(TREG_EDX);
                 r = get_reg(RC_EAX);
                 oad(0x68, size); // push size
                 /* cannot call normal 'alloca' with bound checking */
@@ -503,6 +504,24 @@ ST_FUNC void gfunc_call(int nb_args)
     vtop--;
 }
 
+void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
+{
+#ifdef __i386__
+#ifdef TCC_TARGET_PE
+    fprintf(stderr, "tcc -nostdlib -run not implement for TCC_TARGET_PE\n");
+#else
+    void *sp;
+
+    __asm("sub %1, %%esp\n"
+           "\tmov %%esp, %0"
+           : "=r" (sp)
+           : "r" ((((size_t) cnt + 1) & -2) * sizeof(char *)));
+    memcpy(sp, var, cnt * sizeof(char *));
+    __asm__("jmp *%0" : : "r" (prog_main));
+#endif
+#endif
+}
+
 #ifdef TCC_TARGET_PE
 #define FUNC_PROLOG_SIZE (10 + USE_EBX)
 #else
@@ -577,8 +596,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
             param_addr = addr;
             addr += size;
         }
-        sym_push(sym->v & ~SYM_FIELD, type,
-                 VT_LOCAL | VT_LVAL, param_addr);
+        gfunc_set_param(sym, param_addr, 0);
         param_index++;
     }
     func_ret_sub = 0;

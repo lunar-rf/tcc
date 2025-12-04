@@ -177,7 +177,7 @@ void __aeabi_ ## name(double_unsigned_struct val)                            \
         ret.high = 0;                                                        \
         ret.low = 1 << exp;                                                  \
         if (exp > DOUBLE_FRAC_BITS - 32) {                                   \
-            high_shift = exp - DOUBLE_FRAC_BITS - 32;                        \
+            high_shift = exp - (DOUBLE_FRAC_BITS - 32);                      \
             ret.low |= val.high << high_shift;                               \
             ret.low |= val.low >> (32 - high_shift);                         \
         } else                                                               \

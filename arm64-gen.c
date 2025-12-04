@@ -1167,6 +1167,25 @@ ST_FUNC void gfunc_call(int nb_args)
     tcc_free(t);
 }
 
+void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
+{
+#if defined(__aarch64__)
+#if defined(__TINYC__)
+    // FIXME: immplement arm64 assembler
+    fprintf(stderr, "tcc -nostdlib -run not implement for arm64\n");
+#else
+    void *sp;
+
+    __asm__("sub sp, sp, %1\n"
+            "\tmov %0, sp"
+            : "=r" (sp)
+            : "r" ((((size_t) cnt + 1) & -2) * sizeof(char *)));
+    memcpy(sp, var, cnt * sizeof(char *));
+    __asm__("br %0" : : "r" (prog_main));
+#endif
+#endif
+}
+
 static unsigned long arm64_func_va_list_stack;
 static int arm64_func_va_list_gr_offs;
 static int arm64_func_va_list_vr_offs;
@@ -1242,9 +1261,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym)
         int off = (a[i] < 16 ? 160 + a[i] / 2 * 8 :
                    a[i] < 32 ? 16 + (a[i] - 16) / 2 * 16 :
                    224 + ((a[i] - 32) >> 1 << 1));
-        sym_push(sym->v & ~SYM_FIELD, &sym->type,
-                 (a[i] & 1 ? VT_LLOCAL : VT_LOCAL) | VT_LVAL,
-                 off);
+
+        gfunc_set_param(sym, off, a[i] & 1);
 
         if (a[i] < 16) {
             int align, size = type_size(&sym->type, &align);

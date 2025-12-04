@@ -102,7 +102,7 @@ ST_FUNC void skip(int c)
     if (tok != c) {
         char tmp[40];
         pstrcpy(tmp, sizeof tmp, get_tok_str(c, &tokc));
-        tcc_error("'%s' expected (got \"%s\")", tmp, get_tok_str(tok, &tokc));
+        tcc_error("'%s' expected (got '%s')", tmp, get_tok_str(tok, &tokc));
 	}
     next();
 }
@@ -115,15 +115,53 @@ ST_FUNC void expect(const char *msg)
 /* ------------------------------------------------------------------------- */
 /* Custom allocator for tiny objects */
 
+#define PP_ALLOC_INSERT(a) (a)->next = &pp_allocs; \
+		           (a)->prev = pp_allocs.prev; \
+		           pp_allocs.prev->next = (a); \
+		           pp_allocs.prev = (a);
+#define PP_ALLOC_REMOVE(a) (a)->next->prev = (a)->prev; \
+		           (a)->prev->next = (a)->next;
+
+typedef struct pp_alloc_t {
+    struct pp_alloc_t *next, *prev;
+} pp_alloc_t;
+
+static pp_alloc_t pp_allocs;
+
 #define USE_TAL
 
-#define	POINTER_SIZE sizeof(void *)
-
 #ifndef USE_TAL
-#define tal_free(al, p) tcc_free(p)
-#define tal_realloc(al, p, size) tcc_realloc(p, size)
+#define tal_free(al, p) tcc_free_impl(p)
+#define tal_realloc(al, p, size) tcc_realloc_impl(p, size)
 #define tal_new(a,b,c)
 #define tal_delete(a)
+
+static void tcc_free_impl(void *p)
+{
+    if (p) {
+        pp_alloc_t *alloc = ((pp_alloc_t *)p) - 1;
+
+        PP_ALLOC_REMOVE(alloc);
+        tcc_free(alloc);
+    }
+}
+
+static void *tcc_realloc_impl(void *p, unsigned size)
+{
+    pp_alloc_t *alloc = NULL;
+
+    if (p) {
+        alloc = ((pp_alloc_t *)p) - 1;
+        PP_ALLOC_REMOVE(alloc);
+    }
+    if (size) {
+        alloc = tcc_realloc(alloc, size + sizeof(pp_alloc_t));
+        PP_ALLOC_INSERT(alloc);
+        return alloc + 1;
+    }
+    tcc_free(alloc);
+    return NULL;
+}
 #else
 #if !defined(MEM_DEBUG)
 #define tal_free(al, p) tal_free_impl(al, p)
@@ -135,7 +173,6 @@ ST_FUNC void expect(const char *msg)
 #define tal_free(al, p) tal_free_impl(al, p, __FILE__, __LINE__)
 #define tal_realloc(al, p, size) tal_realloc_impl(&al, p, size, __FILE__, __LINE__)
 #define TAL_DEBUG_PARAMS , const char *file, int line
-#define TAL_DEBUG_FILE_LEN 40
 #endif
 
 #define TOKSYM_TAL_SIZE     (768 * 1024) /* allocator for tiny TokenSym in table_ident */
@@ -159,12 +196,15 @@ typedef struct TinyAlloc {
 } TinyAlloc;
 
 typedef struct tal_header_t {
-    ALIGNED(POINTER_SIZE) unsigned size;
+    size_t  size; /* word align */
 #ifdef TAL_DEBUG
     int     line_num; /* negative line_num used for double free check */
-    char    file_name[TAL_DEBUG_FILE_LEN + 1];
+    char    file_name[40];
 #endif
 } tal_header_t;
+
+#define TAL_ALIGN(size) \
+    (((size) + (sizeof (size_t) - 1)) & ~(sizeof (size_t) - 1))
 
 /* ------------------------------------------------------------------------- */
 
@@ -200,7 +240,7 @@ tail_call:
             tal_header_t *header = (tal_header_t *)p;
             if (header->line_num > 0) {
                 fprintf(stderr, "%s:%d: chunk of %d bytes leaked\n",
-                        header->file_name, header->line_num, header->size);
+                        header->file_name, header->line_num, (int)header->size);
             }
             p += header->size + sizeof(tal_header_t);
         }
@@ -239,8 +279,12 @@ tail_call:
         al = al->next;
         goto tail_call;
     }
-    else
-        tcc_free(p);
+    else {
+	pp_alloc_t *alloc = ((pp_alloc_t *)p) - 1;
+
+        PP_ALLOC_REMOVE(alloc);
+        tcc_free(alloc);
+    }
 }
 
 static void *tal_realloc_impl(TinyAlloc **pal, void *p, unsigned size TAL_DEBUG_PARAMS)
@@ -248,7 +292,7 @@ static void *tal_realloc_impl(TinyAlloc **pal, void *p, unsigned size TAL_DEBUG_
     tal_header_t *header;
     void *ret;
     int is_own;
-    unsigned adj_size = (size + POINTER_SIZE - 1) & -POINTER_SIZE;
+    unsigned adj_size = TAL_ALIGN(size);
     TinyAlloc *al = *pal;
 
 tail_call:
@@ -258,9 +302,8 @@ tail_call:
             header = (tal_header_t *)al->p;
             header->size = adj_size;
 #ifdef TAL_DEBUG
-            { int ofs = strlen(file) - TAL_DEBUG_FILE_LEN;
-            strncpy(header->file_name, file + (ofs > 0 ? ofs : 0), TAL_DEBUG_FILE_LEN);
-            header->file_name[TAL_DEBUG_FILE_LEN] = 0;
+            { int ofs = strlen(file) + 1 - sizeof header->file_name;
+            strcpy(header->file_name, file + (ofs > 0 ? ofs : 0));
             header->line_num = line; }
 #endif
             ret = al->p + sizeof(tal_header_t);
@@ -304,8 +347,12 @@ tail_call:
         goto tail_call;
     }
     if (is_own) {
+	pp_alloc_t *alloc;
+
         al->nb_allocs--;
-        ret = tcc_malloc(size);
+        alloc = tcc_malloc(size + sizeof(pp_alloc_t));
+	PP_ALLOC_INSERT(alloc);
+	ret = alloc + 1;
         header = (((tal_header_t *)p) - 1);
         if (p) memcpy(ret, p, header->size);
 #ifdef TAL_DEBUG
@@ -314,8 +361,23 @@ tail_call:
     } else if (al->next) {
         al = al->next;
         goto tail_call;
-    } else
-        ret = tcc_realloc(p, size);
+    } else {
+	pp_alloc_t *alloc = NULL;
+
+	if (p) {
+	    alloc = ((pp_alloc_t *)p) - 1;
+	    PP_ALLOC_REMOVE(alloc);
+	}
+	if (size) {
+            alloc = tcc_realloc(alloc, size + sizeof(pp_alloc_t));
+	    PP_ALLOC_INSERT(alloc);
+	    ret = alloc + 1;
+	}
+	else {
+	    tcc_free(alloc);
+	    ret = NULL;
+	}
+    }
 #ifdef TAL_INFO
     al->nb_missed++;
 #endif
@@ -323,6 +385,17 @@ tail_call:
 }
 
 #endif /* USE_TAL */
+
+static void tal_alloc_init(void)
+{
+    pp_allocs.next = pp_allocs.prev = &pp_allocs;
+}
+
+static void tal_alloc_free(void)
+{
+    while (pp_allocs.next != &pp_allocs)
+	tal_free(toksym_alloc /* dummy */, pp_allocs.next + 1);
+}
 
 /* ------------------------------------------------------------------------- */
 /* CString handling */
@@ -1419,6 +1492,9 @@ static int parse_include(TCCState *s1, int do_next, int test)
 #ifdef INC_DEBUG
             printf("%s: skipping cached %s\n", file->filename, buf);
 #endif
+            if ((s1->verbose | 1) == 3) /* -vv[v] */
+                printf("=> %*s%s\n",
+                   (int)(s1->include_stack_ptr - s1->include_stack), "", buf);
             return 1;
         }
         if (tcc_open(s1, buf) >= 0)
@@ -2055,7 +2131,7 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
                         expect("more hex digits in universal-character-name");
                     else
                         goto add_hex_or_ucn;
-                    n = n * 16 + c;
+                    n = (unsigned) n * 16 + c;
                     p++;
                 } while (--i);
 		if (is_long) {
@@ -2741,7 +2817,6 @@ maybe_newline:
             cstr_cat(&tokcstr, (char *) p1, len);
             p--;
             PEEKC(c, p);
-        parse_ident_slow:
             while (isidnum_table[c - CH_EOF] & (IS_ID|IS_NUM))
             {
                 cstr_ccat(&tokcstr, c);
@@ -2753,21 +2828,15 @@ maybe_newline:
         break;
     case 'L':
         t = p[1];
-        if (t != '\\' && t != '\'' && t != '\"') {
-            /* fast case */
-            goto parse_ident_fast;
-        } else {
+        if (t == '\'' || t == '\"' || t == '\\') {
             PEEKC(c, p);
             if (c == '\'' || c == '\"') {
                 is_long = 1;
                 goto str_const;
-            } else {
-                cstr_reset(&tokcstr);
-                cstr_ccat(&tokcstr, 'L');
-                goto parse_ident_slow;
             }
+            *--p = c = 'L';
         }
-        break;
+        goto parse_ident_fast;
 
     case '0': case '1': case '2': case '3':
     case '4': case '5': case '6': case '7':
@@ -2978,6 +3047,11 @@ maybe_newline:
         tok = c;
         p++;
         break;
+    case 0xEF: /* UTF8 BOM ? */
+        if (p[1] == 0xBB && p[2] == 0xBF && p == file->buffer) {
+            p += 3;
+            goto redo_no_start;
+        }
     default:
         if (c >= 0x80 && c <= 0xFF) /* utf8 identifiers */
 	    goto parse_ident_fast;
@@ -3629,7 +3703,7 @@ static void putdefs(CString *cs, const char *p)
 
 static void tcc_predefs(TCCState *s1, CString *cs, int is_asm)
 {
-    cstr_printf(cs, "#define __TINYC__ 9%.2s\n", *& TCC_VERSION + 4);
+    cstr_printf(cs, "#define __TINYC__ 9%.2s\n", &TCC_VERSION[4]);
     putdefs(cs, target_machine_defs);
     putdefs(cs, target_os_defs);
 
@@ -3663,6 +3737,7 @@ static void tcc_predefs(TCCState *s1, CString *cs, int is_asm)
     cstr_printf(cs, "#define __SIZEOF_LONG__ %d\n", LONG_SIZE);
     if (!is_asm) {
       putdef(cs, "__STDC__");
+      cstr_printf(cs, "#define __STDC_HOSTED__ %d\n", s1->nostdlib ? 0 : 1);
       cstr_printf(cs, "#define __STDC_VERSION__ %dL\n", s1->cversion);
       cstr_cat(cs,
         /* load more predefs and __builtins */
@@ -3748,6 +3823,7 @@ ST_FUNC void tccpp_new(TCCState *s)
     /* init allocators */
     tal_new(&toksym_alloc, TOKSYM_TAL_LIMIT, TOKSYM_TAL_SIZE);
     tal_new(&tokstr_alloc, TOKSTR_TAL_LIMIT, TOKSTR_TAL_SIZE);
+    tal_alloc_init();
 
     memset(hash_ident, 0, TOK_HASH_SIZE * sizeof(TokenSym *));
     memset(s->cached_includes_hash, 0, sizeof s->cached_includes_hash);
@@ -3803,6 +3879,7 @@ ST_FUNC void tccpp_delete(TCCState *s)
     tok_str_free_str(unget_buf.str);
 
     /* free allocators */
+    tal_alloc_free();
     tal_delete(toksym_alloc);
     toksym_alloc = NULL;
     tal_delete(tokstr_alloc);

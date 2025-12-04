@@ -120,6 +120,7 @@ ST_FUNC void gen_struct_copy(int size);
 
 ST_DATA const char * const target_machine_defs =
     "__x86_64__\0"
+    "__x86_64\0"
     "__amd64__\0"
     ;
 
@@ -932,6 +933,10 @@ void gfunc_call(int nb_args)
     vtop--;
 }
 
+void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
+{
+    fprintf(stderr, "tcc -nostdlib -run not implement for TCC_TARGET_PE\n");
+}
 
 #define FUNC_PROLOG_SIZE 11
 
@@ -974,8 +979,7 @@ void gfunc_prolog(Sym *func_sym)
             if (reg_param_index < REGN) {
                 gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, addr);
             }
-            sym_push(sym->v & ~SYM_FIELD, type,
-                     VT_LLOCAL | VT_LVAL, addr);
+            gfunc_set_param(sym, addr, 1);
         } else {
             if (reg_param_index < REGN) {
                 /* save arguments passed by register */
@@ -988,8 +992,7 @@ void gfunc_prolog(Sym *func_sym)
                     gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, addr);
                 }
             }
-            sym_push(sym->v & ~SYM_FIELD, type,
-		     VT_LOCAL | VT_LVAL, addr);
+            gfunc_set_param(sym, addr, 0);
         }
         addr += 8;
         reg_param_index++;
@@ -1435,6 +1438,20 @@ void gfunc_call(int nb_args)
     vtop--;
 }
 
+void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
+{
+#ifdef __x86_64__
+    void *sp;
+
+    __asm__("subq %1, %%rsp\n"
+	    "\tmovq %%rsp, %0"
+	    : "=r" (sp)
+	    : "r" ((((size_t) cnt + 1) & -2) * sizeof(char *)));
+    memcpy(sp, var, cnt * sizeof(char *));
+    __asm__("jmp *%0" : : "r" (prog_main));
+#endif
+}
+
 #define FUNC_PROLOG_SIZE 11
 
 static void push_arg_reg(int i) {
@@ -1586,8 +1603,7 @@ void gfunc_prolog(Sym *func_sym)
         }
 	default: break; /* nothing to be done for x86_64_mode_none */
         }
-        sym_push(sym->v & ~SYM_FIELD, type,
-                 VT_LOCAL | VT_LVAL, param_addr);
+        gfunc_set_param(sym, param_addr, 0);
     }
 
 #ifdef CONFIG_TCC_BCHECK
@@ -2020,6 +2036,7 @@ void gen_opf(int op)
                 gv(RC_FLOAT);
                 vswap();
                 fc = vtop->c.i; /* bcheck may have saved previous vtop[-1] */
+                r = vtop->r;
             }
             
             if ((ft & VT_BTYPE) == VT_DOUBLE) {
@@ -2154,6 +2171,15 @@ void gen_cvt_ftoi(int t)
     ft = vtop->type.t;
     bt = ft & VT_BTYPE;
     if (bt == VT_LDOUBLE) {
+	if (t != VT_INT) {
+	    vpush_helper_func(TOK___fixxfdi);
+	    vswap();
+	    gfunc_call(1);
+	    vpushi(0);
+	    vtop->r = REG_IRET;
+	    vtop->r2 = REG_IRE2;
+	    return;
+	}
         gen_cvt_ftof(VT_DOUBLE);
         bt = VT_DOUBLE;
     }

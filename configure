@@ -27,6 +27,7 @@ mandir=""
 infodir=""
 sysroot=""
 cross_prefix=""
+os_release=""
 cc="gcc"
 ar="ar"
 bigendian="no"
@@ -122,6 +123,8 @@ for opt do
   --source-path=*) assign_opt "$opt" source_path
   ;;
   --cross-prefix=*) assign_opt "$opt" cross_prefix
+  ;;
+  --os-release=*) assign_opt "$opt" os_release
   ;;
   --cc=*) assign_opt "$opt"
   ;;
@@ -231,6 +234,7 @@ Advanced options (experts only):
 Cross build options (experimental):
   --cpu=CPU                target CPU [$cpu]
   --targetos=...           target OS (Darwin,WIN32,Android/Termux) [$targetos]
+  --os-release=x.y.z       target os release x.y.z [$os_release] (with BSD systems)
   --cross-prefix=PREFIX    use PREFIX for compile tools [$cross_prefix]
 EOF
 exit 1
@@ -256,6 +260,7 @@ fi
 # OS specific
 buildos=$(uname)
 cpu_sys=$(uname -m)
+default os_release "$(uname -r)"
 
 case $buildos in
   Windows_NT|MINGW*|MSYS*|CYGWIN*)
@@ -704,6 +709,7 @@ print_str CONFIG_TCC_ELFINTERP "$tcc_elfinterp"
 print_str CONFIG_TCC_SWITCHES "$tcc_switches"
 print_str CONFIG_LDDIR "$tcc_lddir"
 print_str CONFIG_TRIPLET "$triplet"
+print_str CONFIG_OS_RELEASE "$os_release"
 echo "#endif" >> $TMPH && echo >> $TMPH
 
 print_str CONFIG_SYSROOT "$sysroot" x

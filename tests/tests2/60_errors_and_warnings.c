@@ -1,9 +1,9 @@
+int printf(const char*, ...);
+
 #if defined test_56_btype_excess_1
 struct A {} int i;
-
 #elif defined test_57_btype_excess_2
 char int i;
-
 #elif defined test_58_function_redefinition
 int f(void) { return 0; }
 int f(void) { return 1; }
@@ -253,7 +253,7 @@ int main () {
     hello(123);
     return 0;
 }
-int printf(const char*, ...);
+
 #if defined test_func_3
 static int hello(int a)
 #elif defined test_func_5
@@ -272,7 +272,7 @@ int hello(int a)
 int xxx[];
 #endif
 int bar();
-int printf(const char*, ...);
+
 int main ()
 {
 #if !defined test_var_3
@@ -333,7 +333,7 @@ int main()
 x
 
 #elif defined test_stray_backslash2
-int printf(const char*, ...);
+
 int main()
 {
 #define _S(x) #x
@@ -438,7 +438,7 @@ void func(int a, int if);
 int amain(int argc, char *argv[static argc + 1])
 {
     int i;
-    int printf(const char*, ...);
+
     for (i = 0; i < argc; ++i)
         printf("arg[%d] = \"%s\"\n", i, argv[i]);
     return 0;
@@ -510,10 +510,45 @@ int main()
 #ifdef test_reverse_funcargs
 # pragma comment(option, "-freverse-funcargs")
 #endif
-int printf(const char*, ...);
+
 int main()
 {
     printf(" %d %d %d\n", printf("1"), printf("22"), printf("333"));
+}
+
+#elif defined test_scope_1 \
+   || defined test_scope_2 \
+   || defined test_scope_3
+
+struct xxx {int x[4];};
+
+/* 'ee' not defined outside of function, 'i' not redefined */
+int bar(enum ee { a = 12, b = 34 } i, int(*f)(int i))
+{
+    printf("bar %d %d %d\n", i, a, b);
+    return 0;
+}
+/* 'xxx' not defined outside of function */
+int foo(struct xxx {int x[3];}*p)
+{
+    printf("foo %d", sizeof *p);
+    return p->x[3];
+}
+#ifdef test_scope_2
+/* incompatible redefinition */
+int foo(struct xxx {int x[2];}*p);
+#endif
+#ifndef test_scope_3
+enum ee { a = 1, b };
+#endif
+
+struct xxx x = { 11,22,33,44 };
+int main(int argc, char **argv)
+{
+    printf(" %d %d\n", foo(&x), sizeof (struct xxx));
+    enum ee e = b;
+    bar(13 + e, 0);
+
 }
 
 #endif

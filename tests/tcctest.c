@@ -17,10 +17,6 @@
 /* __VA_ARGS__ and __func__ support */
 #define C99_MACROS
 
-#ifndef __TINYC__
-typedef __SIZE_TYPE__ uintptr_t;
-#endif
-
 #if defined(_WIN32) \
     || (defined(__arm__) \
         && (defined(__FreeBSD__) \
@@ -44,6 +40,8 @@ typedef __SIZE_TYPE__ uintptr_t;
 #define LONG_DOUBLE long double
 #define LONG_DOUBLE_LITERAL(x) x ## L
 #endif
+
+typedef __SIZE_TYPE__ uintptr_t;
 
 /* test various include syntaxes */
 
@@ -1686,7 +1684,7 @@ struct structinit1 {
 
 int sinit1 = 2;
 int sinit2 = { 3 };
-int sinit3[3] = { 1, 2, {{3}}, };
+int sinit3[3] = { 1, 2, {3}, };
 int sinit4[3][2] = { {1, 2}, {3, 4}, {5, 6} };
 int sinit5[3][2] = { 1, 2, 3, 4, 5, 6 };
 int sinit6[] = { 1, 2, 3 };
@@ -2943,14 +2941,12 @@ void old_style_function_test(void)
 
 void alloca_test()
 {
-#if defined __i386__ || defined __x86_64__ || defined __arm__
     char *p = alloca(16);
     strcpy(p,"123456789012345");
     printf("alloca: p is %s\n", p);
     char *demo = "This is only a test.\n";
     /* Test alloca embedded in a larger expression */
     printf("alloca: %s\n", strcpy(alloca(strlen(demo)+1),demo) );
-#endif
 }
 
 void *bounds_checking_is_enabled()
@@ -4210,7 +4206,6 @@ double get100 () { return 100.0; }
 
 void callsave_test(void)
 {
-#if defined __i386__ || defined __x86_64__ || defined __arm__
   int i, s; double *d; double t;
   s = sizeof (double);
   printf ("callsavetest: %d\n", s);
@@ -4223,7 +4218,6 @@ void callsave_test(void)
      generates a segfault.  */
   i = d[0] > get100 ();
   printf ("%d\n", i);
-#endif
 }
 
 

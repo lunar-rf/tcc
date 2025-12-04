@@ -353,8 +353,8 @@ doc : $(TCCDOCS)
 # --------------------------------------------------------------------------
 # install
 
-INSTALL = install -m644
-INSTALLBIN = install -m755 $(STRIP_$(CONFIG_strip))
+INSTALL = install -m 644
+INSTALLBIN = install -m 755 $(STRIP_$(CONFIG_strip))
 STRIP_yes = -s
 
 LIBTCC1_W = $(filter %-win32-libtcc1.a %-wince-libtcc1.a,$(LIBTCC1_CROSS))
@@ -467,12 +467,17 @@ tcov-tes% : tcc_c$(EXESUF)
 	@$(MAKE) --no-print-directory TCC_LOCAL=$(CURDIR)/$< tes$*
 tcc_c$(EXESUF): $($T_FILES)
 	$S$(TCC) tcc.c -o $@ -ftest-coverage $(DEFINES) $(LIBS)
+# run tests with sanitize option
+sani-tes% : tcc_s$(EXESUF)
+	@$(MAKE) --no-print-directory TCC_LOCAL=$(CURDIR)/$< tes$*
+tcc_s$(EXESUF): $($T_FILES)
+	$S$(CC) tcc.c -o $@ -fsanitize=address,undefined $(DEFINES) $(CFLAGS) $(LIBS)
 # test the installed tcc instead
 test-install: $(TCCDEFS_H)
 	@$(MAKE) -C tests TESTINSTALL=yes #_all
 
 clean:
-	@rm -f tcc *-tcc tcc_p tcc_c
+	@rm -f tcc *-tcc tcc_p tcc_c tcc_s
 	@rm -f tags ETAGS *.o *.a *.so* *.out *.log lib*.def *.exe *.dll
 	@rm -f a.out *.dylib *_.h *.pod *.tcov
 	@$(MAKE) -s -C lib $@
@@ -501,8 +506,10 @@ help:
 	@echo "   run all/single test(s) from tests2, optionally update .expect"
 	@echo "make testspp.all / make testspp.17"
 	@echo "   run all/single test(s) from tests/pp"
-	@echo "make tcov-test / tcov-tests2... / tcov-testspp..."
+	@echo "make tcov-test / tcov-tests2.37 / tcov-testspp.17"
 	@echo "   run tests as above with code coverage. After test(s) see tcc_c$(EXESUF).tcov"
+	@echo "make sani-test / sani-tests2.37 / sani-testspp.17"
+	@echo "   run tests as above with sanitize option."
 	@echo "make test-install"
 	@echo "   run tests with the installed tcc"
 	@echo "Other supported make targets:"

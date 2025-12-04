@@ -194,17 +194,18 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
         case R_ARM_PLT32:
             {
                 int x, is_thumb, is_call, h, blx_avail, is_bl, th_ko;
-                x = read32le(ptr) & 0xffffff;
+                unsigned code = read32le(ptr);
+                x = code & 0x00ffffff;
 #ifdef DEBUG_RELOC
 		printf ("reloc %d: x=0x%x val=0x%x ", type, x, val);
 #endif
-                write32le(ptr, read32le(ptr) & 0xff000000);
-                if (x & 0x800000)
-                    x -= 0x1000000;
-                x = (unsigned) x << 2;
+                code &= 0xff000000;
+                x <<= 2;
+                if (x & 0x2000000)
+                    x -= 0x4000000;
                 blx_avail = (CONFIG_TCC_CPUVER >= 5);
                 is_thumb = val & 1;
-                is_bl = read32le(ptr) >> 24 == 0xeb;
+                is_bl = code == 0xeb000000;
                 is_call = (type == R_ARM_CALL || (type == R_ARM_PC24 && is_bl));
                 x += val - addr;
 #ifdef DEBUG_RELOC
@@ -220,9 +221,9 @@ ST_FUNC void relocate(TCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
                 /* Only reached if blx is avail and it is a call */
                 if (is_thumb) {
                     x |= h << 24;
-                    write32le(ptr, 0xfa << 24); /* bl -> blx */
+                    code = 0xfa000000; /* bl -> blx */
                 }
-                write32le(ptr, read32le(ptr) | x);
+                write32le(ptr, code | x);
             }
             return;
         /* Since these relocations only concern Thumb-2 and blx instruction was

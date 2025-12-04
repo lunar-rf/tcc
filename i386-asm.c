@@ -722,7 +722,7 @@ ST_FUNC void asm_opcode(TCCState *s1, int opcode)
         }
         parse_operand(s1, pop);
         if (tok == ':') {
-           if (pop->type != OP_SEG || seg_prefix)
+           if (!(pop->type & OP_SEG) || seg_prefix)
                tcc_error("incorrect prefix");
            seg_prefix = segment_prefixes[pop->reg];
            next();
@@ -852,7 +852,7 @@ again:
         if (opcode >= TOK_ASM_first && opcode <= TOK_ASM_last) {
             int b;
             b = op0_codes[opcode - TOK_ASM_first];
-            if (b & 0xff00) 
+            if (b & 0xff00)
                 g(b >> 8);
             g(b);
             return;
@@ -1233,8 +1233,8 @@ static const char *skip_constraint_modifiers(const char *p)
     return p;
 }
 
-/* If T (a token) is of the form "%reg" returns the register
-   number and type, otherwise return -1.  */
+/* If t (a token) is of the form "%reg" or "reg" return the register number and
+   type, otherwise return -1. With GCC the % is optional, too. */
 ST_FUNC int asm_parse_regvar (int t)
 {
     const char *s;
@@ -1242,13 +1242,14 @@ ST_FUNC int asm_parse_regvar (int t)
     if (t < TOK_IDENT || (t & SYM_FIELD))
         return -1;
     s = table_ident[t - TOK_IDENT]->str;
-    if (s[0] != '%')
-        return -1;
-    t = tok_alloc_const(s + 1);
+    if (s[0] == '%')
+        ++s;
+    t = tok_alloc_const(s);
     unget_tok(t);
+    /* Internally the % prefix is required. */
     unget_tok('%');
     parse_operand(tcc_state, &op);
-    /* Accept only integer regs for now.  */
+    /* Accept only integer regs for now. */
     if (op.type & OP_REG)
         return op.reg;
     else
@@ -1416,7 +1417,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             /* any general register */
             if ((reg = op->reg) >= 0)
                 goto reg_found;
-            else for(reg = 0; reg < 8; reg++) {
+            else for(reg = 0; reg < NB_ASM_REGS; reg++) {
                 if (!is_reg_allocated(reg))
                     goto reg_found;
             }
@@ -1451,7 +1452,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
             if (j < nb_outputs || c == 'm') {
                 if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
                     /* any general register */
-                    for(reg = 0; reg < 8; reg++) {
+                    for(reg = 0; reg < NB_ASM_REGS; reg++) {
                         if (!(regs_allocated[reg] & REG_IN_MASK))
                             goto reg_found1;
                     }
@@ -1484,7 +1485,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
         if (op->reg >= 0 &&
             (op->vt->r & VT_VALMASK) == VT_LLOCAL  &&
             !op->is_memory) {
-            for(reg = 0; reg < 8; reg++) {
+            for(reg = 0; reg < NB_ASM_REGS; reg++) {
                 if (!(regs_allocated[reg] & REG_OUT_MASK))
                     goto reg_found2;
             }
