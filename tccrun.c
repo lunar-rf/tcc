@@ -206,9 +206,10 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
     const char *top_sym;
     jmp_buf main_jb;
 
-#if defined(__APPLE__) || defined(__FreeBSD__)
-    char **envp = NULL;
-#elif defined(__OpenBSD__) || defined(__NetBSD__)
+#if defined(__APPLE__)
+    extern char ***_NSGetEnviron(void);
+    char **envp = *_NSGetEnviron();
+#elif defined(__OpenBSD__) || defined(__NetBSD__)  || defined(__FreeBSD__)
     extern char **environ;
     char **envp = environ;
 #else
@@ -221,6 +222,7 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
 
     tcc_add_symbol(s1, "__rt_exit", rt_exit);
     if (s1->nostdlib) {
+        tcc_add_support(s1, "run_nostdlib.o");
         s1->run_main = top_sym = s1->elf_entryname ? s1->elf_entryname : "_start";
     } else {
         tcc_add_support(s1, "runmain.o");
@@ -251,24 +253,12 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
     ret = tcc_setjmp(s1, main_jb, tcc_get_symbol(s1, top_sym));
     if (0 == ret) {
         if (s1->nostdlib) {
-	    int n = 1;
-	    char **p, **e = envp;
+            void (*run_nostdlib)(void *start, int argc, char **argv, char **envp);
 
-	    /* create sysv memory layout: argc, argv[], NULL, envp[], NULL */
-	    if (envp)
-	        while (*e++)
-		    n++;
-	    p = tcc_malloc((argc + n + 2) * sizeof(char *));
-	    p[0] = (char *) (size_t) argc;
-	    memcpy(p + 1, argv, argc * sizeof(char *));
-	    p[argc + 1] = NULL;
-	    if (envp)
-	        memcpy(p + argc + 2, envp, n * sizeof(char *));
-	    else
-	        p[argc + 2] = NULL;
-	    /* Probably never returns */
-	    tcc_run_start(prog_main, argc + n + 2, p);
-	    tcc_free(p);
+	    run_nostdlib = (void *)get_sym_addr(s1, "_run_nostdlib", 1, 1);
+            if ((addr_t)-1 == (addr_t)run_nostdlib)
+                return -1;
+	    run_nostdlib(prog_main, argc, argv, envp);    /* never returns */
 	}
 	else
             ret = prog_main(argc, argv, envp);

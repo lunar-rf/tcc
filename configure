@@ -230,6 +230,7 @@ Advanced options (experts only):
   --config-new_dtags=yes   use new ELF DTAGs (DT_RUNPATH instead of DT_RPATH)
   --config-codesign=no     do not use codesign on apple to sign executables
   --config-dwarf=x         use dwarf debug info instead of stabs (x=2..5)
+  --config-pie             compile with pie
 
 Cross build options (experimental):
   --cpu=CPU                target CPU [$cpu]

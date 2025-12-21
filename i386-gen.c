@@ -504,24 +504,6 @@ ST_FUNC void gfunc_call(int nb_args)
     vtop--;
 }
 
-void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
-{
-#ifdef __i386__
-#ifdef TCC_TARGET_PE
-    fprintf(stderr, "tcc -nostdlib -run not implement for TCC_TARGET_PE\n");
-#else
-    void *sp;
-
-    __asm("sub %1, %%esp\n"
-           "\tmov %%esp, %0"
-           : "=r" (sp)
-           : "r" ((((size_t) cnt + 1) & -2) * sizeof(char *)));
-    memcpy(sp, var, cnt * sizeof(char *));
-    __asm__("jmp *%0" : : "r" (prog_main));
-#endif
-#endif
-}
-
 #ifdef TCC_TARGET_PE
 #define FUNC_PROLOG_SIZE (10 + USE_EBX)
 #else

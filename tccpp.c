@@ -2550,7 +2550,7 @@ static void parse_number(const char *p)
             }
         }
     } else {
-        unsigned long long n, n1;
+        unsigned long long n = 0, n1 = 0;
         int lcount, ucount, ov = 0;
         const char *p1;
 
@@ -2561,7 +2561,6 @@ static void parse_number(const char *p)
             b = 8;
             q++;
         }
-        n = 0;
         while(1) {
             t = *q++;
             /* no need for checks except for base 10 / 8 errors */
@@ -2575,13 +2574,23 @@ static void parse_number(const char *p)
                 t = t - '0';
             if (t >= b)
                 tcc_error("invalid digit");
-            n1 = n;
             n = n * b + t;
-            /* detect overflow */
-            if (n1 >= 0x1000000000000000ULL && n / b != n1)
-                ov = 1;
+            if (!ov) {
+                /* detect overflow */
+                if (n1 >= 0x1000000000000000ULL && n / b != n1)
+                    ov = 1;
+                else
+                    n1 = n;
+	    }
         }
-
+#ifdef TCC_CUT_ON_INTEGER_LITERAL_OVERFLOW
+        /* On integer literal overflow use the most significant digits before
+           the overflow happened. Effectively this cuts the 0x1000000000000000
+           from above down to 0x10000000 and allows to bootstrap tcc with 32 bit
+           arithmetic. */
+        if (ov)
+            n = n1;
+#endif
         /* Determine the characteristics (unsigned and/or 64bit) the type of
            the constant must have according to the constant suffix(es) */
         lcount = ucount = 0;

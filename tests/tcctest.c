@@ -1173,6 +1173,10 @@ void char_short_test()
        the presence of undefined behaviour (like __csf is).  */
     var1 = csf(unsigned char,0x89898989);
     var4 = csf(signed char,0xabababab);
+#ifdef __clang__
+    /* on macos 15 arm64 this prints -1987475063 instead of 137 */
+    var1 &= 0xff;
+#endif
     printf("promote char/short funcret %d "LONG_LONG_FORMAT"\n", var1, var4);
     printf("promote char/short fumcret VA %d %d %d %d\n",
         csf(unsigned short,0xcdcdcdcd),

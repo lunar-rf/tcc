@@ -1396,20 +1396,6 @@ void gfunc_call(int nb_args)
   float_abi = def_float_abi;
 }
 
-void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
-{
-#ifdef __arm__
-    void *sp;
-
-    __asm__("sub sp, sp, %1\n"
-            "\tmov %0, sp"
-            : "=r" (sp)
-            : "r" ((((size_t) cnt + 1) & -2) * sizeof(char *)));
-    memcpy(sp, var, cnt * sizeof(char *));
-    __asm__("mov pc, %0" : : "r" (prog_main));
-#endif
-}
-
 /* generate function prolog of type 't' */
 void gfunc_prolog(Sym *func_sym)
 {

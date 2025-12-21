@@ -3313,8 +3313,12 @@ typedef Elf32_Addr Elf32_Conflict;
 #define R_RISCV_SET16		55
 #define R_RISCV_SET32		56
 #define R_RISCV_32_PCREL	57
+#define R_RISCV_IRELATIVE	58
+#define R_RISCV_PLT32		59
+#define R_RISCV_SET_ULEB128	60
+#define R_RISCV_SUB_ULEB128	61
 
-#define R_RISCV_NUM		58
+#define R_RISCV_NUM		62
 
 
 #endif	/* elf.h */

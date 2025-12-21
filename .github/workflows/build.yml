@@ -14,7 +14,7 @@ jobs:
       run: ./configure && make && make test -k
 
   test-x86_64-osx:
-    runs-on: macos-13
+    runs-on: macos-15-intel
     timeout-minutes: 2
     steps:
     - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -22,7 +22,7 @@ jobs:
       run: ./configure && make && make test -k
 
   test-aarch64-osx:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 2
     steps:
     - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0

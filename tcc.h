@@ -1797,7 +1797,6 @@ ST_FUNC const char *dlerror(void);
 ST_FUNC void *dlsym(void *handle, const char *symbol);
 #endif
 ST_FUNC void tcc_run_free(TCCState *s1);
-ST_FUNC void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var);
 #endif
 
 /* ------------ tcctools.c ----------------- */
