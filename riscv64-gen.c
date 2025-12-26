@@ -1110,6 +1110,7 @@ static void gen_opil(int op, int ll)
         ER(0x33 | ll, 0, d, a, b, 1); // mul d, a, b
         break;
     case '/':
+    case TOK_PDIV:
         ER(0x33 | ll, 4, d, a, b, 1); // div d, a, b
         break;
     case '&':
@@ -1127,7 +1128,6 @@ static void gen_opil(int op, int ll)
     case TOK_UMOD:
         ER(0x33 | ll, 7, d, a, b, 1); // remu d, a, b
         break;
-    case TOK_PDIV:
     case TOK_UDIV:
         ER(0x33 | ll, 5, d, a, b, 1); // divu d, a, b
         break;

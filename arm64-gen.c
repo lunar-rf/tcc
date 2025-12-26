@@ -1756,6 +1756,7 @@ static void arm64_gen_opil(int op, uint32_t l)
         o(0x4b000000 | l << 31 | x | a << 5 | b << 16); // sub
         break;
     case '/':
+    case TOK_PDIV:
         o(0x1ac00c00 | l << 31 | x | a << 5 | b << 16); // sdiv
         break;
     case '^':
@@ -1798,7 +1799,6 @@ static void arm64_gen_opil(int op, uint32_t l)
         o(0x1ac02400 | l << 31 | x | a << 5 | b << 16); // lsr
         break;
     case TOK_UDIV:
-    case TOK_PDIV:
         o(0x1ac00800 | l << 31 | x | a << 5 | b << 16); // udiv
         break;
     case TOK_UGE:
