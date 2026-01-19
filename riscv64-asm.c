@@ -209,6 +209,16 @@ static void parse_operand(TCCState *s1, Operand *op)
         if ((int) op->e.v >= -0x1000 && (int) op->e.v < 0x1000)
             op->type = OP_IM12S;
     } else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) {
+        /* see also: "RISC-V ABIs Specification" V1.0
+
+           section 5.2 recommends using a GOT for
+           "possibly-undefined weak symbols"
+
+           section 5.3: "Medium position independent code model"
+           if this is a non-local symbol: use a GOT
+           non-local: outside of a pc-relative +- 2 GiB range
+        */
+
         label.type.t = VT_VOID | VT_STATIC;
 
         /* use the medium PIC model: GOT, auipc, lw */

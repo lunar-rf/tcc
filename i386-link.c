@@ -15,7 +15,11 @@
 #define ELF_START_ADDR 0x08048000
 #define ELF_PAGE_SIZE  0x1000
 
+#if defined CONFIG_TCC_PIC
+#define PCRELATIVE_DLLPLT 1
+#else
 #define PCRELATIVE_DLLPLT 0
+#endif
 #define RELOCATE_DLLPLT 1
 
 #else /* !TARGET_DEFS_ONLY */

@@ -24,11 +24,6 @@ CFLAGS += $(CPPFLAGS)
 VPATH = $(TOPSRC)
 -LTCC = $(TOP)/$(LIBTCC)
 
-ifeq ($(CONFIG_pie),yes)
-CFLAGS += -fPIE
-LDFLAGS += -pie
-endif
-
 ifdef CONFIG_WIN32
  CFG = -win
  ifneq ($(CONFIG_static),yes)
@@ -296,6 +291,11 @@ tcc_p$(EXESUF): $($T_FILES)
 libtcc.a: $(LIBTCC_OBJ)
 	$S$(AR) rcs $@ $^
 
+ifeq ($(CC_NAME)-$(ARCH),clang-x86_64)
+# avoid 32-bit relocations in libtcc.a for its usage with tcc -run
+libtcc.a: override CFLAGS += -fPIC
+endif
+
 # dynamic libtcc library
 libtcc.so: $(LIBTCC_OBJ)
 	$S$(CC) -shared -Wl,-soname,$@ -o $@ $^ $(LIBS) $(LDFLAGS)
@@ -372,7 +372,7 @@ IR = $(IM) mkdir -p $2 && cp -r $1/. $2
 IM = @echo "-> $2 : $1" ;
 BINCHECK = $(if $(wildcard $(PROGS) *-tcc$(EXESUF)),,@echo "Makefile: nothing found to install" && exit 1)
 
-EXTRA_O = runmain.o run_nostdlib.o bt-exe.o bt-dll.o bt-log.o bcheck.o
+EXTRA_O = runmain.o bt-exe.o bt-dll.o bt-log.o bcheck.o
 
 # install progs & libs
 install-unx:
@@ -394,7 +394,7 @@ endif
 # uninstall
 uninstall-unx:
 	@rm -fv $(addprefix "$(bindir)/",$(PROGS) $(PROGS_CROSS))
-	@rm -fv $(addprefix "$(libdir)/", libtcc*.a libtcc*.so libtcc.dylib,$P)
+	@rm -fv $(addprefix "$(libdir)/", libtcc*.a libtcc*.so libtcc.dylib)
 	@rm -fv $(addprefix "$(includedir)/", libtcc.h)
 	@rm -fv "$(mandir)/man1/tcc.1" "$(infodir)/tcc-doc.info"
 	@rm -fv "$(docdir)/tcc-doc.html"

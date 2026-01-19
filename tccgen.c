@@ -3589,8 +3589,7 @@ static void cast_error(CType *st, CType *dt)
 static void verify_assign_cast(CType *dt)
 {
     CType *st, *type1, *type2;
-    Sym *sym;
-    int dbt, sbt, qualwarn, lvl, compat;
+    int dbt, sbt, qualwarn, lvl;
 
     st = &vtop->type; /* source type */
     dbt = dt->t & VT_BTYPE;
@@ -3644,29 +3643,8 @@ static void verify_assign_cast(CType *dt)
 		   base types, though, in particular for unsigned enums
 		   and signed int targets.  */
             } else {
-                compat = 0;
-                /* Don't warn if the source struct (recursively) contains
-                   destination struct as the first member. */
-                if (dbt == VT_STRUCT && sbt == VT_STRUCT
-                    && !IS_UNION(type2->t)
-                    ) {
-                    sym = type2->ref->next;
-                    while (sym != NULL && (sym->type.t & VT_BTYPE) == VT_STRUCT
-                        ) {
-                        if (is_compatible_unqualified_types(type1, &sym->type)
-                            ) {
-                            compat = 1;
-                            break;
-                        }
-                        if (IS_UNION(sym->type.t))
-                            break;
-                        sym = sym->type.ref->next;
-                    }
-                }
-                if( !compat ) {
-                    tcc_warning("assignment from incompatible pointer type");
-                    break;
-                }
+                tcc_warning("assignment from incompatible pointer type");
+                break;
             }
         }
         if (qualwarn)
@@ -8742,13 +8720,8 @@ static int decl(int l)
         while (1) { /* iterate thru each declaration */
             type = btype;
 	    ad = adbase;
-            if (l == VT_CMP) {
-                type_decl(&type, &ad, &v, TYPE_DIRECT | TYPE_PARAM);
-            } else {
-                type_decl(&type, &ad, &v, TYPE_DIRECT);
-            }
+            type_decl(&type, &ad, &v, l == VT_CMP ? TYPE_DIRECT | TYPE_PARAM : TYPE_DIRECT);
             /*ptype("decl", &type, v);*/
-
             if ((type.t & VT_BTYPE) == VT_FUNC) {
                 if ((type.t & VT_STATIC) && (l != VT_CONST))
                     tcc_error("function without file scope cannot be static");

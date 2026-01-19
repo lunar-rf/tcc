@@ -221,14 +221,11 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
         return 0;
 
     tcc_add_symbol(s1, "__rt_exit", rt_exit);
-    if (s1->nostdlib) {
-        tcc_add_support(s1, "run_nostdlib.o");
-        s1->run_main = top_sym = s1->elf_entryname ? s1->elf_entryname : "_start";
-    } else {
-        tcc_add_support(s1, "runmain.o");
-        s1->run_main = "_runmain";
-        top_sym = "main";
-    }
+    s1->run_main = "_runmain", top_sym = "main";
+    if (s1->elf_entryname)
+        s1->run_main = top_sym = s1->elf_entryname;
+    tcc_add_support(s1, "runmain.o");
+
     if (tcc_relocate(s1) < 0)
         return -1;
 
@@ -252,19 +249,10 @@ LIBTCCAPI int tcc_run(TCCState *s1, int argc, char **argv)
 
     ret = tcc_setjmp(s1, main_jb, tcc_get_symbol(s1, top_sym));
     if (0 == ret) {
-        if (s1->nostdlib) {
-            void (*run_nostdlib)(void *start, int argc, char **argv, char **envp);
-
-	    run_nostdlib = (void *)get_sym_addr(s1, "_run_nostdlib", 1, 1);
-            if ((addr_t)-1 == (addr_t)run_nostdlib)
-                return -1;
-	    run_nostdlib(prog_main, argc, argv, envp);    /* never returns */
-	}
-	else
-            ret = prog_main(argc, argv, envp);
-    }
-    else if (RT_EXIT_ZERO == ret)
+        ret = prog_main(argc, argv, envp);
+    } else if (RT_EXIT_ZERO == ret) {
         ret = 0;
+    }
 
     if (s1->dflag & 16 && ret) /* tcc -dt -run ... */
         fprintf(s1->ppfp, "[returns %d]\n", ret), fflush(s1->ppfp);
@@ -299,7 +287,7 @@ static void cleanup_sections(TCCState *s1)
     do {
         for (i = --f; i < p->nb_secs; i++) {
             Section *s = p->secs[i];
-            if (s == s1->symtab || s == s1->symtab->link || s == s1->symtab->hash) {
+            if (s1->do_debug || s == s1->symtab || s == s1->symtab->link || s == s1->symtab->hash) {
                 s->data = tcc_realloc(s->data, s->data_allocated = s->data_offset);
             } else {
                 free_section(s), tcc_free(s), p->secs[i] = NULL;
@@ -311,10 +299,11 @@ static void cleanup_sections(TCCState *s1)
 /* ------------------------------------------------------------- */
 /* 0 = .text rwx  other rw (memory >= 2 pages a 4096 bytes) */
 /* 1 = .text rx   other rw (memory >= 3 pages) */
-/* 2 = .text rx  .rdata ro  .data/.bss rw (memory >= 4 pages) */
+/* 2 = .debug    .debug ro (optional) */
+/* 3 = .text rx  .rdata ro  .data/.bss rw (memory >= 4 pages) */
 
 /* Some targets implement secutiry options that do not allow write in
-   executable code. These targets need CONFIG_RUNMEM_RO=1.
+   executable code. These targets need CONFIG_RUNMEM_RO=2.
    The disadvantage of this is that it requires a little bit more memory. */
 
 #ifndef CONFIG_RUNMEM_RO
@@ -355,12 +344,13 @@ redo:
     if (copy == 3)
         return 0;
 
-    for (k = 0; k < 3; ++k) { /* 0:rx, 1:ro, 2:rw sections */
+    for (k = 0; k < 4; ++k) { /* 0:rx, 1:ro, 2:ro debug , 3:rw sections */
         n = 0; addr = 0;
         for(i = 1; i < s1->nb_sections; i++) {
             static const char shf[] = {
-                SHF_ALLOC|SHF_EXECINSTR, SHF_ALLOC, SHF_ALLOC|SHF_WRITE
+                SHF_ALLOC|SHF_EXECINSTR, SHF_ALLOC, 0, SHF_ALLOC|SHF_WRITE
                 };
+	    if (k == 2 && s1->do_debug == 0) continue;
             s = s1->sections[i];
             if (shf[k] != (s->sh_flags & (SHF_ALLOC|SHF_WRITE|SHF_EXECINSTR)))
                 continue;

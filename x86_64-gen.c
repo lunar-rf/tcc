@@ -444,7 +444,8 @@ void load(int r, SValue *sv)
             b = 0xdb, r = 5; /* fldt */
         } else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) {
             b = 0xbe0f;   /* movsbl */
-        } else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED)) {
+        } else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED) ||
+		   (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED)) {
             b = 0xb60f;   /* movzbl */
         } else if ((ft & VT_TYPE) == VT_SHORT) {
             b = 0xbf0f;   /* movswl */
@@ -538,7 +539,8 @@ void load(int r, SValue *sv)
                     o(0x44 + REG_VALUE(r)*8); /* %xmmN */
                     o(0xf024);
                 } else {
-                    assert((v >= TREG_XMM0) && (v <= TREG_XMM7));
+		    if (!nocode_wanted)
+                        assert((v >= TREG_XMM0) && (v <= TREG_XMM7));
                     if ((ft & VT_BTYPE) == VT_FLOAT) {
                         o(0x100ff3);
                     } else {
@@ -548,7 +550,8 @@ void load(int r, SValue *sv)
                     o(0xc0 + REG_VALUE(v) + REG_VALUE(r)*8);
                 }
             } else if (r == TREG_ST0) {
-                assert((v >= TREG_XMM0) && (v <= TREG_XMM7));
+		if (!nocode_wanted)
+                    assert((v >= TREG_XMM0) && (v <= TREG_XMM7));
                 /* gen_cvt_ftof(VT_LDOUBLE); */
                 /* movsd %xmmN,-0x10(%rsp) */
                 o(0x110ff2);

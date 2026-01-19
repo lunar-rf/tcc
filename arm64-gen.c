@@ -274,6 +274,7 @@ static int arm64_type_size(int t)
     case VT_DOUBLE: return 3;
     case VT_LDOUBLE: return 4;
     case VT_BOOL: return 0;
+    case VT_VOID: return 0;
     }
     assert(0);
     return 0;
@@ -476,7 +477,7 @@ static void arm64_sym(int r, Sym *sym, unsigned long addend)
 		int t = r ? 0 : 1;
 		o(0xf81f0fe0 | t);            /* str xt, [sp, #-16]! */
 		arm64_movimm(t, addend & ~0xfffffful); // use xt for addent
-		o(0x91000000 | r | (t << 5)); /* add xr, xt, #0 */
+		o(0x8B000000 | (t << 16) | (r << 5) | r); /* add xr, xr, xt */
 		o(0xf84107e0 | t);            /* ldr xt, [sp], #16 */
 	    }
         }
@@ -1355,6 +1356,10 @@ ST_FUNC void gen_va_arg(CType *t)
         o(0x540000ad); // b.le .+20
 #endif
         o(0xf9400000 | r1 | r0 << 5); // ldr x(r1),[x(r0)] // __stack
+        if (align == 16) {
+            o(0x91003c00 | r1 | r1 << 5); // add x(r1),x(r1),#15
+            o(0x927cec00 | r1 | r1 << 5); // and x(r1),x(r1),#-16
+        }
         o(0x9100001e | r1 << 5 | n << 10); // add x30,x(r1),#(n)
         o(0xf900001e | r0 << 5); // str x30,[x(r0)] // __stack
 #if !defined(TCC_TARGET_MACHO)
