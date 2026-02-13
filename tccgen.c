@@ -2504,7 +2504,7 @@ static void gen_opic(int op)
     }
 }
 
-#if defined TCC_TARGET_X86_64 || defined TCC_TARGET_I386
+#if defined TCC_TARGET_X86_64 || defined TCC_TARGET_I386 || defined TCC_TARGET_ARM64
 # define gen_negf gen_opf
 #elif defined TCC_TARGET_ARM
 void gen_negf(int op)
@@ -3097,6 +3097,9 @@ op_err:
 #endif
             type1 = vtop[-1].type;
             vpush_type_size(pointed_type(&vtop[-1].type), &align);
+            if (!(vtop[-1].type.t & VT_UNSIGNED)) {
+                gen_cast_s(VT_PTRDIFF_T);
+            }
             gen_op('*');
 #ifdef CONFIG_TCC_BCHECK
             if (tcc_state->do_bounds_check && !CONST_WANTED) {

@@ -1596,6 +1596,10 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 #endif
         }
 
+        if (reg >= 8) {
+            cstr_printf(add_str, "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : ((size == 4) ? 'd' : ' ')));
+            return;
+        }
         switch(size) {
         case -1:
             reg = TOK_ASM_ah + reg;

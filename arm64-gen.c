@@ -1849,6 +1849,37 @@ ST_FUNC void gen_opf(int op)
 {
     uint32_t x, a, b, dbl;
 
+    if (op == TOK_NEG) {
+        switch (vtop[0].type.t & VT_BTYPE) {
+        case VT_LDOUBLE:
+            vpush_helper_func(TOK___negtf2);
+            vrott(2);
+            gfunc_call(1);
+            vpushi(0);
+            vtop->type.t = VT_LDOUBLE;
+            vtop->r = REG_FRET;
+            break;
+
+        case VT_FLOAT:
+        case VT_DOUBLE:
+            gv(RC_FLOAT);
+            dbl = (vtop[0].type.t & VT_BTYPE) == VT_DOUBLE;
+
+            a = fltr(vtop[0].r);
+            vtop--;
+            x = get_reg(RC_FLOAT);
+            vtop++;
+            vtop[0].r = x;
+            x = fltr(x);
+
+            o(0x1e214000 | dbl << 22 | x | a << 5);
+            break;
+        default:
+            assert(0);
+        }
+        return;
+    }
+
     if (vtop[0].type.t == VT_LDOUBLE) {
         CType type = vtop[0].type;
         int func = 0;
@@ -1877,6 +1908,7 @@ ST_FUNC void gen_opf(int op)
             o(0x7100001f); // cmp w0,#0
             o(0x1a9f07e0 | (uint32_t)cond << 12); // cset w0,(cond)
         }
+        arm64_vset_VT_CMP(op);
         return;
     }
 

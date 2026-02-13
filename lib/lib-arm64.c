@@ -18,7 +18,14 @@ typedef int int32_t;
 typedef unsigned uint32_t;
 typedef long long int64_t;
 typedef unsigned long long uint64_t;
-void *memcpy(void*,void*,__SIZE_TYPE__);
+static void *memcpy(void* d, void* s, __SIZE_TYPE__ c) {
+    char *d_, *s_;
+    d_ = d; s_ = s;
+    for (__SIZE_TYPE__ i = 0; i < c; ++i) {
+        d_[i] = s_[i];
+    }
+    return d;
+}
 #else
 #include <stdint.h>
 #include <string.h>
@@ -103,74 +110,72 @@ static void f3_unpack(int *sgn, int32_t *exp, u128_t *mnt, long double f)
         x.x1 |= (uint64_t)1 << 48;
     else
         *exp = 1;
-    *mnt = x;
+    memcpy(mnt, &x, 16);
 }
 
-static u128_t f3_normalise(int32_t *exp, u128_t mnt)
+static void f3_normalise(int32_t *exp, u128_t *mnt)
 {
     int sh;
-    if (!(mnt.x0 | mnt.x1))
-        return mnt;
-    if (!mnt.x1) {
-        mnt.x1 = mnt.x0;
-        mnt.x0 = 0;
+    if (!(mnt->x0 | mnt->x1))
+        return;
+    if (!mnt->x1) {
+        mnt->x1 = mnt->x0;
+        mnt->x0 = 0;
         *exp -= 64;
     }
     for (sh = 32; sh; sh >>= 1) {
-        if (!(mnt.x1 >> (64 - sh))) {
-            mnt.x1 = mnt.x1 << sh | mnt.x0 >> (64 - sh);
-            mnt.x0 = mnt.x0 << sh;
+        if (!(mnt->x1 >> (64 - sh))) {
+            mnt->x1 = mnt->x1 << sh | mnt->x0 >> (64 - sh);
+            mnt->x0 = mnt->x0 << sh;
             *exp -= sh;
         }
     }
-    return mnt;
 }
 
-static u128_t f3_sticky_shift(int32_t sh, u128_t x)
+static void f3_sticky_shift(int32_t sh, u128_t *x)
 {
   if (sh >= 128) {
-      x.x0 = !!(x.x0 | x.x1);
-      x.x1 = 0;
-      return x;
+      x->x0 = !!(x->x0 | x->x1);
+      x->x1 = 0;
+      return;
   }
   if (sh >= 64) {
-      x.x0 = x.x1 | !!x.x0;
-      x.x1 = 0;
+      x->x0 = x->x1 | !!x->x0;
+      x->x1 = 0;
       sh -= 64;
   }
   if (sh > 0) {
-      x.x0 = x.x0 >> sh | x.x1 << (64 - sh) | !!(x.x0 << (64 - sh));
-      x.x1 = x.x1 >> sh;
+      x->x0 = x->x0 >> sh | x->x1 << (64 - sh) | !!(x->x0 << (64 - sh));
+      x->x1 = x->x1 >> sh;
   }
-  return x;
 }
 
-static long double f3_round(int sgn, int32_t exp, u128_t x)
+static long double f3_round(int sgn, int32_t exp, u128_t *x)
 {
     long double f;
     int error;
 
     if (exp > 0) {
-        x = f3_sticky_shift(13, x);
+        f3_sticky_shift(13, x);
     }
     else {
-        x = f3_sticky_shift(14 - exp, x);
+        f3_sticky_shift(14 - exp, x);
         exp = 0;
     }
 
-    error = x.x0 & 3;
-    x.x0 = x.x0 >> 2 | x.x1 << 62;
-    x.x1 = x.x1 >> 2;
+    error = x->x0 & 3;
+    x->x0 = x->x0 >> 2 | x->x1 << 62;
+    x->x1 = x->x1 >> 2;
 
-    if (error == 3 || ((error == 2) & (x.x0 & 1))) {
-        if (!++x.x0) {
-            ++x.x1;
-            if (x.x1 == (uint64_t)1 << 48)
+    if (error == 3 || ((error == 2) & (x->x0 & 1))) {
+        if (!++x->x0) {
+            ++x->x1;
+            if (x->x1 == (uint64_t)1 << 48)
                 exp = 1;
-            else if (x.x1 == (uint64_t)1 << 49) {
+            else if (x->x1 == (uint64_t)1 << 49) {
                 ++exp;
-                x.x0 = x.x0 >> 1 | x.x1 << 63;
-                x.x1 = x.x1 >> 1;
+                x->x0 = x->x0 >> 1 | x->x1 << 63;
+                x->x1 = x->x1 >> 1;
             }
         }
     }
@@ -178,8 +183,8 @@ static long double f3_round(int sgn, int32_t exp, u128_t x)
     if (exp >= 32767)
         return f3_infinity(sgn);
 
-    x.x1 = x.x1 << 16 >> 16 | (uint64_t)exp << 48 | (uint64_t)sgn << 63;
-    memcpy(&f, &x, 16);
+    x->x1 = x->x1 << 16 >> 16 | (uint64_t)exp << 48 | (uint64_t)sgn << 63;
+    memcpy(&f, x, 16);
     return f;
 }
 
@@ -214,11 +219,11 @@ static long double f3_add(long double fa, long double fb, int neg)
     b.x0 = b.x0 << 3;
 
     if (a_exp <= b_exp) {
-        a = f3_sticky_shift(b_exp - a_exp, a);
+        f3_sticky_shift(b_exp - a_exp, &a);
         a_exp = b_exp;
     }
     else {
-        b = f3_sticky_shift(a_exp - b_exp, b);
+        f3_sticky_shift(a_exp - b_exp, &b);
         b_exp = a_exp;
     }
 
@@ -241,9 +246,9 @@ static long double f3_add(long double fa, long double fb, int neg)
     if (!(x.x0 | x.x1))
         return f3_zero(0);
 
-    x = f3_normalise(&x_exp, x);
+    f3_normalise(&x_exp, &x);
 
-    return f3_round(x_sgn, x_exp + 12, x);
+    return f3_round(x_sgn, x_exp + 12, &x);
 }
 
 long double __addtf3(long double a, long double b)
@@ -278,8 +283,8 @@ long double __multf3(long double fa, long double fb)
     if (!(a.x0 | a.x1) || !(b.x0 | b.x1))
         return f3_zero(a_sgn ^ b_sgn);
 
-    a = f3_normalise(&a_exp, a);
-    b = f3_normalise(&b_exp, b);
+    f3_normalise(&a_exp, &a);
+    f3_normalise(&b_exp, &b);
 
     x_sgn = a_sgn ^ b_sgn;
     x_exp = a_exp + b_exp - 16352;
@@ -318,7 +323,7 @@ long double __multf3(long double fa, long double fb)
         x.x1 = y1;
     }
 
-    return f3_round(x_sgn, x_exp, x);
+    return f3_round(x_sgn, x_exp, &x);
 }
 
 long double __divtf3(long double fa, long double fb)
@@ -343,8 +348,8 @@ long double __divtf3(long double fa, long double fb)
     if (!(a.x0 | a.x1) || b_exp == 32767)
         return f3_zero(a_sgn ^ b_sgn);
 
-    a = f3_normalise(&a_exp, a);
-    b = f3_normalise(&b_exp, b);
+    f3_normalise(&a_exp, &a);
+    f3_normalise(&b_exp, &b);
 
     x_sgn = a_sgn ^ b_sgn;
     x_exp = a_exp - b_exp + 16395;
@@ -368,9 +373,20 @@ long double __divtf3(long double fa, long double fb)
     }
     x.x0 |= !!(a.x0 | a.x1);
 
-    x = f3_normalise(&x_exp, x);
+    f3_normalise(&x_exp, &x);
 
-    return f3_round(x_sgn, x_exp, x);
+    return f3_round(x_sgn, x_exp, &x);
+}
+
+long double __negtf2(long double f)
+{
+    u128_t a;
+
+    memcpy(&a, &f, 16);
+    a.x1 ^= 1UL << 63;
+    memcpy(&f, &a, 16);
+
+    return f;
 }
 
 long double __extendsftf2(float f)

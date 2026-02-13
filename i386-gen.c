@@ -1176,6 +1176,22 @@ ST_FUNC void ggoto(void)
 /* bound check support functions */
 #ifdef CONFIG_TCC_BCHECK
 
+/* Need PIC for shared libraries */
+static void gen_bound_call(int v)
+{
+    Sym *sym;
+
+    sym = external_helper_sym(v);
+#if defined CONFIG_TCC_PIC
+    get_pc_thunk(TREG_EBX, 1);
+    oad(0xe8, -4);
+    greloc(cur_text_section, sym, ind - 4, R_386_PLT32);
+#else
+    oad(0xe8, -4);
+    greloc(cur_text_section, sym, ind - 4, R_386_PC32);
+#endif
+}
+
 static void gen_bounds_prolog(void)
 {
     /* leave some room for bound checking code */
@@ -1224,7 +1240,7 @@ static void gen_bounds_epilog(void)
         greloc(cur_text_section, sym_data, ind + 1, R_386_32);
         ind = ind + 5;
 #endif
-        gen_static_call(TOK___bound_local_new);
+        gen_bound_call(TOK___bound_local_new);
         ind = saved_ind;
     }
 
@@ -1239,7 +1255,7 @@ static void gen_bounds_epilog(void)
     greloc(cur_text_section, sym_data, ind + 1, R_386_32);
     oad(0xb8, 0); /* mov %eax, xxx */
 #endif
-    gen_static_call(TOK___bound_local_delete);
+    gen_bound_call(TOK___bound_local_delete);
     o(0x585a); /* restore returned value, if any */
 }
 #endif

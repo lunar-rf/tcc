@@ -316,6 +316,7 @@
      DEF(TOK___extenddftf2, "__extenddftf2")
      DEF(TOK___trunctfsf2, "__trunctfsf2")
      DEF(TOK___trunctfdf2, "__trunctfdf2")
+     DEF(TOK___negtf2, "__negtf2")
      DEF(TOK___fixtfsi, "__fixtfsi")
      DEF(TOK___fixtfdi, "__fixtfdi")
      DEF(TOK___fixunstfsi, "__fixunstfsi")
