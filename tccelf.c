@@ -145,6 +145,9 @@ ST_FUNC void tccelf_delete(TCCState *s1)
     dynarray_reset(&s1->priv_sections, &s1->nb_priv_sections);
 
     tcc_free(s1->sym_attrs);
+#ifdef TCC_TARGET_RISCV64
+    tcc_free(s1->pcrel_hi_entries);
+#endif
     symtab_section = NULL; /* for tccrun.c:rt_printline() */
 }
 
@@ -1126,6 +1129,10 @@ static void relocate_section(TCCState *s1, Section *s, Section *sr)
     unsigned char *ptr;
     addr_t tgt, addr;
     int is_dwarf = s->sh_num >= s1->dwlo && s->sh_num < s1->dwhi;
+
+#ifdef TCC_TARGET_RISCV64
+    s1->nb_pcrel_hi_entries = 0;
+#endif
 
     qrel = (ElfW_Rel *)sr->data;
     for_each_elem(sr, 0, rel, ElfW_Rel) {

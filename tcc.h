@@ -939,6 +939,9 @@ struct TCCState {
 
 #ifdef TCC_TARGET_RISCV64
     struct pcrel_hi { addr_t addr, val; } last_hi;
+    struct pcrel_hi *pcrel_hi_entries;
+    int nb_pcrel_hi_entries;
+    int alloc_pcrel_hi_entries;
     #define last_hi s1->last_hi
 #endif
 
